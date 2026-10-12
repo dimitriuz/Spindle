@@ -79,8 +79,13 @@ func run(ctx context.Context, rc runConfig) error {
 			case "playback":
 				hub.Broadcast("playback", ev.Data)
 			case "playlist":
-				hub.Broadcast("playlist", ev.Data)
-				go refresh()
+				// the browser refetches /api/queue on this signal, so the
+				// queue cache must already hold the new rows: absorb first,
+				// then ring the bell.
+				go func() {
+					refresh()
+					hub.Broadcast("playlist", ev.Data)
+				}()
 			case "job":
 				hub.Broadcast("job", ev.Data)
 			}
@@ -93,8 +98,10 @@ func run(ctx context.Context, rc runConfig) error {
 			}
 			hub.Broadcast("player", map[string]string{"status": status})
 			if on {
-				go refresh()
-				hub.Broadcast("resync", map[string]string{})
+				go func() {
+					refresh()
+					hub.Broadcast("resync", map[string]string{})
+				}()
 			}
 		})
 	go sub.Run(ctx)

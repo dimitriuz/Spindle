@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -73,6 +74,143 @@ func startFakePlayer(t *testing.T) string {
 		}
 	}()
 	return path
+}
+
+// TestPlaylistSignalFollowsCacheSwap pins the contract the browser relies on:
+// when an SSE "playlist" frame lands, GET /api/queue must already serve the
+// new rows. The fake swaps its queue rows and only then pushes the playlist
+// event, so broadcasting the signal before absorbing would let the test
+// observe the old rows.
+func TestPlaylistSignalFollowsCacheSwap(t *testing.T) {
+	var mu sync.Mutex
+	rowTitle := "Row A"
+	var subConn net.Conn
+	setRow := func(s string) { mu.Lock(); rowTitle = s; mu.Unlock() }
+	getRow := func() string { mu.Lock(); defer mu.Unlock(); return rowTitle }
+
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "s")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				sc := bufio.NewScanner(bufio.NewReader(c))
+				for sc.Scan() {
+					var req map[string]json.RawMessage
+					if json.Unmarshal(sc.Bytes(), &req) != nil {
+						continue
+					}
+					var id, method, op string
+					_ = json.Unmarshal(req["id"], &id)
+					_ = json.Unmarshal(req["method"], &method)
+					_ = json.Unmarshal(req["operation"], &op)
+					switch method {
+					case "subscribe":
+						mu.Lock()
+						subConn = c
+						mu.Unlock()
+						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true}\n", id)
+						fmt.Fprint(c, `{"event":"runtime.state","seq":1,"retained":true,"data":{"state":"playing","revision":5,"playlist_revision":7}}`+"\n")
+					case "state.get":
+						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"snapshot\":{\"state\":\"playing\",\"revision\":5,\"playlist_revision\":7}}\n", id)
+					case "capabilities":
+						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"result\":[]}\n", id)
+					case "operation.submit":
+						switch op {
+						case "queue.list":
+							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j1\",\"operation\":\"queue.list\",\"state\":\"succeeded\",\"result\":{\"ok\":true,\"tracks\":[{\"title\":%q}]}}}\n", id, getRow())
+						case "playnext.list":
+							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j2\",\"operation\":\"playnext.list\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
+						case "make-change":
+							// rows change BEFORE the event exists on the wire
+							setRow("Row B")
+							mu.Lock()
+							if subConn != nil {
+								fmt.Fprint(subConn, `{"event":"runtime.playlist","seq":9,"data":{"revision":8,"playlist_revision":8}}`+"\n")
+							}
+							mu.Unlock()
+							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j3\",\"operation\":\"make-change\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
+						default:
+							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j9\",\"state\":\"succeeded\"}}\n", id)
+						}
+					default:
+						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true}\n", id)
+					}
+				}
+			}()
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port := freePort(t)
+	go func() { _ = run(ctx, runConfig{Socket: sock, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
+	st := readStatus(t, dir)
+	tok, _ := st["token"].(string)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	// initial queue: Row A
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if q := getJSON(t, base+"/api/queue", tok); len(q["tracks"].([]any)) == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("initial queue never arrived")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// open SSE before stirring, so the playlist frame is observed
+	sseResp, err := testHTTP.Get(base + "/api/events?token=" + tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sseResp.Body.Close()
+	frames := make(chan string, 32)
+	go func() {
+		sc := bufio.NewScanner(sseResp.Body)
+		for sc.Scan() {
+			frames <- sc.Text()
+		}
+	}()
+
+	if r := postCommand(t, base, tok, `{"op":"make-change"}`); r["job"] == nil {
+		t.Fatalf("make-change rejected: %v", r)
+	}
+
+	sawPlaylist := false
+	deadline = time.Now().Add(5 * time.Second)
+	for !sawPlaylist && time.Now().Before(deadline) {
+		select {
+		case line := <-frames:
+			if line == "event: playlist" {
+				sawPlaylist = true
+			}
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	if !sawPlaylist {
+		t.Fatal("no playlist frame on SSE")
+	}
+
+	// the signal just landed: the cache must already hold Row B
+	q := getJSON(t, base+"/api/queue", tok)
+	tracks, _ := q["tracks"].([]any)
+	if len(tracks) != 1 {
+		t.Fatalf("queue lost rows after signal: %v", q)
+	}
+	if row, _ := tracks[0].(map[string]any); row["title"] != "Row B" {
+		t.Fatalf("playlist signal outran the queue cache: %v", row)
+	}
 }
 
 func freePort(t *testing.T) int {
