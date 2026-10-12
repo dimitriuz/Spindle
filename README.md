@@ -13,6 +13,28 @@ browser ──HTTP/SSE──> cliamp-web (Go bridge, port 8730)
                         cliamp  ◄── web.lua plugin spawns & supervises it
 ```
 
+## What the phone can do
+
+On top of the v1 controls (transport, scrub, volume, shuffle/repeat, playlist
+and play-next editing), v2 adds choosing music itself:
+
+- **Browse** every provider the player reports (`provider.list`): playlists,
+  albums, artists, radio catalog — capability-adaptive tabs, paginated
+  infinite scroll, drill-down to album/artist track lists with breadcrumb
+  back-navigation.
+- **Search** each searchable provider (debounced typing; results are tracks).
+- **Act on results**: play now (▶) / queue next (+) on any track row; load a
+  playlist or an album into the queue behind a confirm — those ops replace the
+  queue, so the confirm is the guard.
+- **Now Playing** full-screen page: typographic hero, full-width scrubber,
+  large transport/volume/shuffle/repeat controls, "Up next" tap-to-play; the
+  `Now Playing · Queue · Browse` tab shell keeps a mini player on the other
+  views.
+
+Listings refresh on a bounded TTL (60 s default); a provider outage shows an
+inline retry banner that keeps the rows already on screen.
+
+
 ## Install
 
 1. `cliamp plugins install <user>/cliamp-plugin-web`
@@ -99,6 +121,9 @@ make ui      # npm ci + vite build → webui/dist (committed, go:embed)
 make build   # dist/cliamp-web (embeds webui/dist)
 make test    # go vet + go test
 ```
+
+Update the installed dev binary: `make build && cp dist/cliamp-web ~/.local/bin/cliamp-web`.
+
 
 Hot-reload the UI during development: `cliamp-web serve` on one terminal,
 `cd webui && npm run dev` on another, then open
