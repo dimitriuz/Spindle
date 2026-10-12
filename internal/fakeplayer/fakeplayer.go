@@ -146,6 +146,9 @@ func (f *Fake) submit(c net.Conn, id, op string, params json.RawMessage) {
 		f.Push(`{"event":"runtime.playlist","seq":9,"data":{"revision":8,"playlist_revision":8}}`)
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j3\",\"operation\":\"make-change\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
 	default:
+		if f.providerOps(c, id, op, params) {
+			return
+		}
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j9\",\"operation\":%q,\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id, op)
 	}
 }
