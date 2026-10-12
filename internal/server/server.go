@@ -26,6 +26,9 @@ type Config struct {
 	// LibraryTimeout caps one provider job wait (0 ⇒ 30 s).
 	LibraryTimeout time.Duration
 
+	// HeartbeatInterval is the SSE keepalive cadence (0 ⇒ 15 s).
+	HeartbeatInterval time.Duration
+
 	listCache      *ttlcache
 	providersCache *ttlcache
 	noCache        *ttlcache
@@ -36,6 +39,13 @@ func (c *Config) libraryTimeout() time.Duration {
 		return defaultLibraryTimeout
 	}
 	return c.LibraryTimeout
+}
+
+func (c *Config) heartbeat() time.Duration {
+	if c.HeartbeatInterval == 0 {
+		return 15 * time.Second
+	}
+	return c.HeartbeatInterval
 }
 
 type serverState struct{ cfg Config }
@@ -63,6 +73,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/album/{id}/tracks", s.protect(http.HandlerFunc(s.libraryAlbumTracks)))
 	mux.Handle("GET /api/library/{provider}/artist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryArtistTracks)))
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
+	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))
 	mux.Handle("/", s.staticHandler())
 	return mux

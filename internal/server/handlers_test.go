@@ -61,6 +61,7 @@ type fakeRunner struct {
 	err        error
 	errFn      func(ctx context.Context) error
 	okFn       func()
+	calls      int
 }
 
 func (f *fakeRunner) Call(_ context.Context, _ string, _ any) (*ipc.Response, error) {
@@ -68,6 +69,7 @@ func (f *fakeRunner) Call(_ context.Context, _ string, _ any) (*ipc.Response, er
 }
 
 func (f *fakeRunner) SubmitJob(ctx context.Context, op string, p any) (*ipc.Job, error) {
+	f.calls++
 	f.lastOp = op
 	f.lastParams, _ = p.(map[string]any)
 	if f.errFn != nil {

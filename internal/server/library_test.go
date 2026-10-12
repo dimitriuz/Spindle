@@ -178,3 +178,26 @@ func TestPlaylistNotFoundMaps502(t *testing.T) {
 		t.Fatalf("want 502+detail, got %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestLyricsRoutePassthroughAndUncached(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"lyrics":[{"start":1.5,"text":"hi"}]}`)}}
+	h := New(libConfig(t, fr))
+	rec := libGet(t, h, "/api/lyrics")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"text":"hi"`) || fr.lastOp != "lyrics" {
+		t.Fatalf("lyrics: %d %s op=%s", rec.Code, rec.Body, fr.lastOp)
+	}
+	_ = libGet(t, h, "/api/lyrics")
+	_ = libGet(t, h, "/api/lyrics")
+	if fr.calls != 3 { // Review Focus: lyrics must never cache
+		t.Fatalf("lyrics must hit the runner every time, calls=%d", fr.calls)
+	}
+}
+
+func TestLyricsNotFoundMaps502(t *testing.T) {
+	fr := &fakeRunner{err: &ipc.IPCError{Code: "internal_error", Detail: "no lyrics found"}}
+	h := New(libConfig(t, fr))
+	rec := libGet(t, h, "/api/lyrics")
+	if rec.Code != 502 || !strings.Contains(rec.Body.String(), "no lyrics found") {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+}

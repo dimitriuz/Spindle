@@ -137,6 +137,11 @@ func (s *serverState) libraryPlaylistTracks(w http.ResponseWriter, r *http.Reque
 	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", params)
 }
 
+func (s *serverState) libraryLyrics(w http.ResponseWriter, r *http.Request) {
+	// never cached: lyrics follow whatever track is loaded right now
+	s.libraryGET(w, r, s.cfg.noCache, "lyrics", map[string]any{})
+}
+
 func (s *serverState) librarySearch(w http.ResponseWriter, r *http.Request) {
 	params, ok := libParams(r)
 	if !ok {
