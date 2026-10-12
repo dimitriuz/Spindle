@@ -114,6 +114,7 @@ func (f *Fake) providerOps(c net.Conn, id, op string, params json.RawMessage) bo
 	}
 	var p struct {
 		Provider string `json:"provider"`
+		Playlist string `json:"playlist"`
 		Album    string `json:"album"`
 		ID       string `json:"id"`
 		Query    string `json:"query"`
@@ -163,6 +164,18 @@ func (f *Fake) providerOps(c net.Conn, id, op string, params json.RawMessage) bo
 	case "provider.search":
 		b, _ := json.Marshal(paged(fixtureSearch(p.Query), p.Offset, p.Limit, "tracks"))
 		ok(string(b))
+	case "provider.load":
+		if p.Playlist == "" {
+			failJob(c, id, op, "navidrome: missing parameter: 'playlist' (code 10)")
+			return true
+		}
+		ok(`{"ok":true}`)
+	case "provider.load_album":
+		if p.Album == "" {
+			failJob(c, id, op, "navidrome: missing parameter: 'album' (code 10)")
+			return true
+		}
+		ok(`{"ok":true}`)
 	default:
 		return false
 	}

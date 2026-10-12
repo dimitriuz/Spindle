@@ -220,10 +220,16 @@ export function browseMore() {
   if (kind) void fetchPage(kind, b.offset, false);
 }
 
+// navigation (reset) fetches always proceed and supersede whatever is in
+// flight; page fetches coalesce while loading. responses from a superseded
+// generation are dropped, so a slow navidrome reply can never paint over
+// the radio list the user switched to.
+let reqGen = 0;
 async function fetchPage(kind: string, offset: number, reset: boolean) {
   const b = store.browse;
-  if (!kind || b.loading) return;
+  if (!kind || (!reset && b.loading)) return;
   if (kind === "search" && !b.query) return;
+  const gen = ++reqGen;
   b.loading = true;
   try {
     const top = b.stack[b.stack.length - 1];
@@ -237,15 +243,16 @@ async function fetchPage(kind: string, offset: number, reset: boolean) {
       b.error = "unknown browse tab";
       return;
     }
+    if (gen !== reqGen) return;
     const add = rows(reply, field);
     b.list = reset ? [...add] : [...b.list, ...add];
     b.total = typeof reply.total === "number" ? reply.total : b.list.length;
     b.offset = b.list.length;
     b.error = "";
   } catch (e: unknown) {
-    b.error = errText(e);
+    if (gen === reqGen) b.error = errText(e);
   } finally {
-    b.loading = false;
+    if (gen === reqGen) b.loading = false;
   }
 }
 

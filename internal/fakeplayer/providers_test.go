@@ -78,6 +78,20 @@ func TestMissingIDParamFailsLikeLive(t *testing.T) {
 	}
 }
 
+func TestLoadOpsDemandTheirParam(t *testing.T) {
+	c := startProviders(t)
+	// live cliamp v2.0.1: provider.load wants params.playlist,
+	// provider.load_album wants params.album; anything else fails the job.
+	if _, err := c.SubmitJob(context.Background(), "provider.load", map[string]any{"provider": "navidrome", "id": "pl1"}); err == nil || !strings.Contains(err.Error(), "missing parameter: 'playlist'") {
+		t.Fatalf("load with wrong param name must fail like live: %v", err)
+	}
+	if _, err := c.SubmitJob(context.Background(), "provider.load_album", map[string]any{"provider": "navidrome", "id": "al3"}); err == nil || !strings.Contains(err.Error(), "missing parameter: 'album'") {
+		t.Fatalf("load_album given id instead of album must fail like live: %v", err)
+	}
+	call(t, c, "provider.load", map[string]any{"provider": "navidrome", "playlist": "pl1"})
+	call(t, c, "provider.load_album", map[string]any{"provider": "navidrome", "album": "al3"})
+}
+
 func TestSearchEmptyAndNonEmpty(t *testing.T) {
 	c := startProviders(t)
 	raw := call(t, c, "provider.search", map[string]any{"provider": "ytmusic", "query": "lofi", "limit": 2})
