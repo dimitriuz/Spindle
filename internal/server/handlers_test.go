@@ -92,11 +92,11 @@ func postCommand(h http.Handler, body string) *httptest.ResponseRecorder {
 func TestCommandSuccessReturnsJob(t *testing.T) {
 	fr := &fakeRunner{job: &ipc.Job{ID: "j", State: "succeeded", Snapshot: json.RawMessage(`{"revision":9}`)}}
 	h := New(commandConfig(t, fr))
-	rec := postCommand(h, `{"op":"queue.jump","params":{"index":4,"if_revision":7}}`)
+	rec := postCommand(h, `{"op":"queue.play","params":{"index":4,"if_revision":7}}`)
 	if rec.Code != 200 {
 		t.Fatalf("got %d body %s", rec.Code, rec.Body)
 	}
-	if fr.lastOp != "queue.jump" || fr.lastParams["if_revision"] != float64(7) {
+	if fr.lastOp != "queue.play" || fr.lastParams["if_revision"] != float64(7) {
 		t.Fatalf("params passthrough broken: %+v", fr.lastParams)
 	}
 	if !strings.Contains(rec.Body.String(), `"succeeded"`) {
