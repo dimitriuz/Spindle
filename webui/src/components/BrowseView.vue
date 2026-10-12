@@ -13,8 +13,8 @@ import {
   browseSearch,
   playTrack,
   queueTrack,
-  loadPlaylist,
-  playAlbumDrill,
+  playDrill,
+  tapCatalogRow,
 } from "../store";
 
 onMounted(loadProviders);
@@ -44,6 +44,11 @@ function searchValue(ev: Event): string {
   const t = ev.target;
   if (t !== null && "value" in t) return String(t.value);
   return "";
+}
+
+function headKind(): "" | "album" | "artist" | "playlist" {
+  const s = store.browse.stack;
+  return s.length ? s[s.length - 1].kind : "";
 }
 </script>
 
@@ -81,8 +86,10 @@ function searchValue(ev: Event): string {
       <button class="retry" @click="retryBrowse()">retry</button>
     </p>
 
-    <p v-if="store.browse.stack.length && store.browse.stack[store.browse.stack.length - 1].kind === 'album'" class="albumhead">
-      <button class="act" aria-label="play album" @click.stop="playAlbumDrill()">play album</button>
+    <p v-if="headKind() && headKind() !== 'artist'" class="albumhead">
+      <button class="act" :aria-label="'play ' + headKind()" @click.stop="playDrill()">
+        ▶ play {{ headKind() === "album" ? "album" : "playlist" }}
+      </button>
     </p>
 
     <ul class="rows">
@@ -102,14 +109,21 @@ function searchValue(ev: Event): string {
             <b>{{ row.name }}</b>
           </div>
         </template>
-        <template v-else-if="(store.browse.tab === 'playlists' || store.browse.tab === 'catalog') && !store.browse.stack.length">
-          <b>{{ row.name }}</b>
-          <span class="muted">{{ row.track_count ?? "" }}</span>
-          <button v-if="row.id" class="act" aria-label="load playlist" @click.stop="loadPlaylist(row.id ?? '', row.name ?? '')">load</button>
+        <template v-else-if="store.browse.tab === 'playlists' && !store.browse.stack.length">
+          <div class="drill" @click="openDrill({ kind: 'playlist', id: row.id ?? '', title: String(row.name ?? '') })">
+            <b>{{ row.name }}</b>
+            <span class="muted">{{ row.track_count ?? "" }}</span>
+          </div>
+        </template>
+        <template v-else-if="store.browse.tab === 'catalog' && !store.browse.stack.length">
+          <div class="tap" @click="tapCatalogRow(row)">
+            <b>{{ row.name }}</b>
+            <span class="glyph">▶</span>
+          </div>
         </template>
         <template v-else>
           <span class="t">{{ row.title }}</span>
-          <span class="muted">{{ String(row.artist ?? "") }}</span>
+          <span class="muted">{{ row.artist ? "· " + String(row.artist) : "" }}</span>
           <button class="act" aria-label="play now" @click.stop="playTrack(row)">▶</button>
           <button class="act" aria-label="queue next" @click.stop="queueTrack(row)">+</button>
         </template>
@@ -185,24 +199,41 @@ function searchValue(ev: Event): string {
   gap: 0.3rem;
 }
 .row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
   border-radius: 8px;
-  padding: 0.3rem 0.5rem;
+  padding: 0.35rem 0.5rem;
 }
+.row:nth-child(odd) { background: #101216; }
 .drill {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
   color: var(--fg);
 }
-.muted {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.t {
+.drill b { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tap {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
   color: var(--fg);
 }
+.tap b { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.glyph { color: var(--accent); flex: none; }
+.t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.muted { color: var(--muted); font-size: 0.8rem; flex: none; max-width: 42%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sentinel {
   height: 1px;
 }
 .act {
+  flex: none;
   font-size: 0.75rem;
   padding: 0.05rem 0.5rem;
   border-radius: 5px;

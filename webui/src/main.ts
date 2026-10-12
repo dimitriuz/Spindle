@@ -1,11 +1,11 @@
 import { createApp } from "vue";
 import App from "./App.vue";
 import "./style.css";
-import { connectEvents, refreshCaps, refreshQueue, refreshState } from "./store";
+import { refreshCaps, refreshQueue, refreshState, startEventStream } from "./store";
 
 refreshState();
 refreshQueue();
 refreshCaps();
-connectEvents();
+startEventStream();
 
 createApp(App).mount("#app");

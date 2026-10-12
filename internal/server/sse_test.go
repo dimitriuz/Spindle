@@ -117,6 +117,25 @@ func TestSSEReplayCurrentPlayerAndStateOnConnect(t *testing.T) { // Review Focus
 	}
 }
 
+func TestSSENamedPing(t *testing.T) {
+	cfg := authedConfig(t)
+	cfg.HeartbeatInterval = 50 * time.Millisecond
+	h := New(cfg)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	c := sseConnect(t, srv.URL, "deadbeef")
+	defer c.close()
+	// connect replays player+state first; a ping must follow within a few
+	// 50 ms heartbeats:
+	for i := 0; i < 4; i++ {
+		if f := c.next(t, 2*time.Second); f.name == "ping" {
+			return
+		}
+	}
+	t.Fatal("no named ping frame within window")
+}
+
 func TestSSEUnsubscribeOnClientDisconnect(t *testing.T) {
 	cfg := authedConfig(t)
 	h := New(cfg)

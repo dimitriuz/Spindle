@@ -107,3 +107,42 @@ func TestSearchEmptyAndNonEmpty(t *testing.T) {
 		t.Fatalf("empty search must be total:0 with an empty array: %s", raw)
 	}
 }
+
+func TestProviderTracksPlaylistParam(t *testing.T) {
+	c := startProviders(t)
+	raw := call(t, c, "provider.tracks", map[string]any{"provider": "navidrome", "playlist": "pl1"})
+	if !strings.Contains(string(raw), `"Playlist One Track 1"`) || !strings.Contains(string(raw), `"total":3`) {
+		t.Fatalf("playlist rows: %s", raw)
+	}
+	// id wins when both params present (live precedence, spec §4)
+	raw = call(t, c, "provider.tracks", map[string]any{"provider": "navidrome", "id": "ar2", "playlist": "pl1"})
+	if strings.Contains(string(raw), "Playlist One") || !strings.Contains(string(raw), "Album Three Track 1") {
+		t.Fatalf("id must win over playlist: %s", raw)
+	}
+	if _, err := c.SubmitJob(context.Background(), "provider.tracks", map[string]any{"provider": "navidrome", "playlist": "nope"}); err == nil || !strings.Contains(err.Error(), "playlist not found (code 70)") {
+		t.Fatalf("bogus playlist must fail like live: %v", err)
+	}
+	if _, err := c.SubmitJob(context.Background(), "provider.tracks", map[string]any{"provider": "navidrome"}); err == nil || !strings.Contains(err.Error(), "missing parameter: 'id'") {
+		t.Fatalf("missing both must keep failing 'id': %v", err)
+	}
+}
+
+func TestLyricsOp(t *testing.T) {
+	f, err := Start(t.TempDir(), Options{Lyrics: `[{"start":0.5,"text":"line one"}]`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	raw := call(t, ipc.NewConn(f.Path), "lyrics", nil)
+	if !strings.Contains(string(raw), `"line one"`) {
+		t.Fatalf("lyrics fixture: %s", raw)
+	}
+	g, err := Start(t.TempDir(), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	if _, err := ipc.NewConn(g.Path).SubmitJob(context.Background(), "lyrics", nil); err == nil || !strings.Contains(err.Error(), "no lyrics found") {
+		t.Fatalf("empty lyrics must fail like live: %v", err)
+	}
+}

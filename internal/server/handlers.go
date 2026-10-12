@@ -118,7 +118,7 @@ func (s *serverState) events(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "event: state\ndata: %s\n\n", s.cfg.Cache.State())
 	flusher.Flush()
 
-	hb := time.NewTicker(15 * time.Second)
+	hb := time.NewTicker(s.cfg.heartbeat())
 	defer hb.Stop()
 	for {
 		select {
@@ -126,6 +126,7 @@ func (s *serverState) events(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-hb.C:
 			fmt.Fprint(w, ": ping\n\n")
+			fmt.Fprint(w, "event: ping\ndata: {}\n\n")
 			flusher.Flush()
 		case f, open := <-ch:
 			if !open {

@@ -26,6 +26,12 @@ const pos = computed(() => fmtPos(Number(store.snapshot.position ?? 0)));
 
 <style scoped>
 .mini {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--tabs-h) + 0.5rem + env(safe-area-inset-bottom, 0px));
+  width: min(720px, calc(100% - 2rem));
+  z-index: 29;
   display: flex;
   align-items: center;
   gap: 12px;

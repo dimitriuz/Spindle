@@ -85,33 +85,95 @@ export function withRevision(
   return runCommand(op, { ...params, if_revision: store.queue.playlist_revision });
 }
 
-export function connectEvents(): EventSource {
-  const es = new EventSource(
-    `/api/events?token=${encodeURIComponent(api.token)}`,
-  );
-  es.addEventListener("state", (e) =>
-    Object.assign(store.snapshot, JSON.parse((e as MessageEvent).data)),
-  );
-  es.addEventListener("playback", (e) =>
-    Object.assign(store.snapshot, JSON.parse((e as MessageEvent).data)),
-  );
-  es.addEventListener("playlist", () => refreshQueue());
-  es.addEventListener("resync", () => {
-    refreshState();
-    refreshQueue();
+// --- SSE resilience (spec §5.4): one live EventSource, backoff reopen on
+// error, watchdog reopen when frames go stale (iOS half-open sockets),
+// immediate reopen when the tab becomes visible again.
+const BACKOFF = [1000, 2000, 5000, 10000, 30000];
+let es: EventSource | null = null;
+let lastFrameAt = 0;
+let backoffIdx = 0;
+let reconnectTimer: number | undefined;
+let resyncPending = true;
+
+function touch() {
+  lastFrameAt = Date.now();
+  backoffIdx = 0;
+  if (resyncPending) {
+    resyncPending = false;
+    void refreshState();
+    void refreshQueue();
+  }
+}
+
+function attach(e: EventSource) {
+  const on = (name: string, fn: (data: string) => void) =>
+    e.addEventListener(name, (ev) => {
+      touch();
+      fn((ev as MessageEvent).data);
+    });
+  on("state", (d) => Object.assign(store.snapshot, JSON.parse(d)));
+  on("playback", (d) => Object.assign(store.snapshot, JSON.parse(d)));
+  on("playlist", () => void refreshQueue());
+  on("resync", () => {
+    void refreshState();
+    void refreshQueue();
     notify("state resynced");
   });
-  es.addEventListener("player", (e) => {
+  on("player", (d) => {
     const was = store.online;
-    store.online = JSON.parse((e as MessageEvent).data).status === "online";
-    if (was !== store.online)
-      notify(store.online ? "player online" : "player offline");
+    store.online = JSON.parse(d).status === "online";
+    if (was !== store.online) notify(store.online ? "player online" : "player offline");
   });
-  return es;
+  on("ping", () => {});
+  e.onopen = () => touch();
+  e.onerror = () => {
+    // Review Focus 1: the dying instance is ALWAYS closed, ours or not.
+    e.close();
+    if (es === e) es = null;
+    scheduleReopen();
+  };
+}
+
+function scheduleReopen() {
+  if (reconnectTimer !== undefined || es !== null) return;
+  resyncPending = true;
+  const d = BACKOFF[Math.min(backoffIdx, BACKOFF.length - 1)];
+  backoffIdx++;
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = undefined;
+    open();
+  }, d);
+}
+
+function forceReopen() {
+  if (reconnectTimer !== undefined) {
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+  if (es) es.close();
+  es = null;
+  resyncPending = true;
+  open();
+}
+
+function open() {
+  const e = new EventSource(`/api/events?token=${encodeURIComponent(api.token)}`);
+  es = e;
+  attach(e);
+}
+
+export function startEventStream() {
+  open();
+  window.setInterval(() => {
+    if (Date.now() - lastFrameAt > 35000 && reconnectTimer === undefined) forceReopen();
+  }, 5000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && Date.now() - lastFrameAt > 5000) forceReopen();
+  });
 }
 
 export interface Drill {
-  kind: "album" | "artist";
+  kind: "album" | "artist" | "playlist";
   id: string;
   title: string;
 }
@@ -130,6 +192,7 @@ const LIST_FIELDS: Record<string, "playlists" | "albums" | "artists" | "tracks">
   album: "tracks",
   artist: "tracks",
   search: "tracks",
+  playlist: "tracks",
 };
 
 export function errText(e: unknown): string {
@@ -236,6 +299,7 @@ async function fetchPage(kind: string, offset: number, reset: boolean) {
     let reply: api.ListReply;
     const field = LIST_FIELDS[kind];
     if (kind === "album" && top) reply = await api.libraryTracks(b.provider, "album", top.id, offset);
+    else if (kind === "playlist" && top) reply = await api.libraryPlaylistTracks(b.provider, top.id, offset);
     else if (kind === "search") reply = await api.searchProvider(b.provider, b.query, offset);
     else if (kind === "playlists" || kind === "albums" || kind === "artists" || kind === "catalog")
       reply = await api.libraryList(b.provider, kind, offset);
@@ -277,17 +341,24 @@ export function queueTrack(row: api.BrowseRow) {
   withRevision("track.queue", { track: row.path });
 }
 
-export function loadPlaylist(id: string, name: string) {
-  if (!id) return;
-  if (!window.confirm(`replace the queue with playlist "${name}"?`)) return;
-  runCommand("provider.load", { provider: store.browse.provider, playlist: id });
-}
-
-// album detail (drill stack top is an album): the "play album" button.
-export function playAlbumDrill() {
+// drill header action: replace the queue with the drilled collection.
+export function playDrill() {
   const b = store.browse;
   const top = b.stack[b.stack.length - 1];
-  if (!top || top.kind !== "album") return;
-  if (!window.confirm(`replace the queue with album "${top.title}"?`)) return;
-  runCommand("provider.load_album", { provider: b.provider, album: top.id });
+  if (!top) return;
+  if (top.kind === "album") {
+    if (!window.confirm(`replace the queue with album "${top.title}"?`)) return;
+    runCommand("provider.load_album", { provider: b.provider, album: top.id });
+  } else if (top.kind === "playlist") {
+    if (!window.confirm(`replace the queue with playlist "${top.title}"?`)) return;
+    runCommand("provider.load", { provider: b.provider, playlist: top.id });
+  }
+}
+
+// radio catalog rows carry no path; stations play via provider.load only
+// (spec §2) — whole-row tap behind the same confirm.
+export function tapCatalogRow(row: api.BrowseRow) {
+  if (!row.id) return;
+  if (!window.confirm(`play station "${row.name ?? ""}"? this replaces the queue`)) return;
+  runCommand("provider.load", { provider: store.browse.provider, playlist: row.id });
 }

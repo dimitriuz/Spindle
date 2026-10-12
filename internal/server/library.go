@@ -126,6 +126,22 @@ func (s *serverState) libraryArtistTracks(w http.ResponseWriter, r *http.Request
 	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", params)
 }
 
+func (s *serverState) libraryPlaylistTracks(w http.ResponseWriter, r *http.Request) {
+	params, ok := libParams(r)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
+	// playlist-only by construction: this route cannot emit an id param.
+	params["playlist"] = r.PathValue("id")
+	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", params)
+}
+
+func (s *serverState) libraryLyrics(w http.ResponseWriter, r *http.Request) {
+	// never cached: lyrics follow whatever track is loaded right now
+	s.libraryGET(w, r, s.cfg.noCache, "lyrics", map[string]any{})
+}
+
 func (s *serverState) librarySearch(w http.ResponseWriter, r *http.Request) {
 	params, ok := libParams(r)
 	if !ok {
