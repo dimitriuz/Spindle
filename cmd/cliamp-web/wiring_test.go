@@ -263,3 +263,46 @@ func getJSONNoAuth(t *testing.T, url string) map[string]any {
 	json.NewDecoder(resp.Body).Decode(&m)
 	return m
 }
+
+func TestRunServesLibraryAndSearch(t *testing.T) {
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{
+		State: `{"state":"playing","revision":5,"playlist_revision":7}`,
+		Track: `{"title":"Fake Song"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	port := freePort(t)
+	go func() { _ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
+	st := readStatus(t, dir)
+	tok, _ := st["token"].(string)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		r := getJSON(t, base+"/api/library/providers", tok)
+		if r["ok"] == true {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("providers never came up: %v", r)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	r := getJSON(t, base+"/api/library/navidrome/playlists?offset=0&limit=50", tok)
+	if total, _ := r["total"].(float64); total != 120 {
+		t.Fatalf("want 120 playlists, got %v", r["total"])
+	}
+	s := getJSON(t, base+"/api/search/ytmusic?q=lofi", tok)
+	tracks, _ := s["tracks"].([]any)
+	if len(tracks) != 3 || tracks[0].(map[string]any)["stream"] != true {
+		t.Fatalf("search passthrough: %v", s)
+	}
+	if rec := getJSONNoAuth(t, base+"/api/library/local/albums"); rec["code"] == nil {
+		t.Fatalf("library must require token: %v", rec)
+	}
+}
