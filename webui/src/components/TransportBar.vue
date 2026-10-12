@@ -22,16 +22,14 @@ const repeatLabel: Record<string, string> = {
 // cliamp range for absolute volume, dB (cliamp --vol flag bounds). V2 never
 // reports the current dB back, so the slider shows the last value this page
 // set, seeded at cliamp's startup default of 0.
+// v-model feeds Reka's own state; the command fires only on commit (pointer
+// release / keyboard), never mid-drag.
 const VOL_MIN = -30;
 const VOL_MAX = 6;
-const volDraft = ref<number | null>(null);
-const lastSet = ref(0);
-const volume = computed(() => volDraft.value ?? lastSet.value);
+const volume = ref<number[]>([0]);
 
 function setVolume(value: number | number[]) {
   const v = Array.isArray(value) ? value[0] : value;
-  volDraft.value = null;
-  lastSet.value = v;
   runCommand("volume", { value: v });
 }
 
@@ -98,24 +96,19 @@ function setShuffle(checked: boolean) {
       <span class="vol-label">vol</span>
       <SliderRoot
         class="vol-slider"
-        :model-value="[volume]"
+        v-model="volume"
         :min="VOL_MIN"
         :max="VOL_MAX"
         :step="1"
         :disabled="!store.online"
         @value-commit="setVolume"
-        @value-change="
-          (v: number | number[]) => {
-            volDraft = Array.isArray(v) ? v[0] : v;
-          }
-        "
       >
         <SliderTrack class="vol-track">
           <SliderRange class="vol-fill" />
         </SliderTrack>
         <SliderThumb class="vol-thumb" />
       </SliderRoot>
-      <span class="vol-num">{{ volume }} dB</span>
+      <span class="vol-num">{{ volume[0] }} dB</span>
     </div>
   </section>
 </template>

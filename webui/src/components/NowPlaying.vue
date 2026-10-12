@@ -44,9 +44,17 @@ const position = computed(() =>
     : basePos.value,
 );
 
-// Dragging lives locally; the seek fires once on release, never mid-drag.
-const dragPos = ref<number | null>(null);
-const shownPos = computed(() => dragPos.value ?? position.value);
+// v-model feeds Reka's own state. While dragging, SSE-driven position must
+// not fight the user's grab; the seek fires once on commit, never mid-drag.
+const model = ref<number[]>([0]);
+const dragging = ref(false);
+watch(
+  [position, dragging],
+  () => {
+    if (!dragging.value) model.value = [position.value];
+  },
+  { immediate: true },
+);
 
 function seekTo(value: number | number[]) {
   const v = Array.isArray(value) ? value[0] : value;
@@ -64,20 +72,16 @@ function seekTo(value: number | number[]) {
 
     <div v-if="!seekable" class="scrub indeterminate" />
     <div v-else class="scrub-row">
-      <span class="time">{{ fmtPos(shownPos) }}</span>
+      <span class="time">{{ fmtPos(model[0]) }}</span>
       <SliderRoot
         class="scrub"
-        :model-value="[shownPos]"
+        v-model="model"
         :min="0"
         :max="duration"
         :step="1"
         @value-commit="seekTo"
-        @drag-start="dragPos = position"
-        @value-change="
-          (v: number | number[]) => {
-            if (dragPos !== null) dragPos = Array.isArray(v) ? v[0] : v;
-          }
-        "
+        @drag-start="dragging = true"
+        @drag-end="dragging = false"
       >
         <SliderTrack class="scrub-track">
           <SliderRange class="scrub-fill" />
