@@ -31,5 +31,6 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.Handle("GET /api/state", s.protect(http.HandlerFunc(s.state)))
 	mux.Handle("POST /api/command", s.protect(http.HandlerFunc(s.command)))
+	mux.Handle("GET /api/events", s.protect(http.HandlerFunc(s.events)))
 	return mux
 }
