@@ -43,17 +43,14 @@ body {
   font-size: 0.85rem;
 }
 
-.pill {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+.banner {
+  border: 1px solid var(--err);
+  border-left: 3px solid var(--err);
+  border-radius: 4px;
+  color: var(--err);
+  font-size: 0.85rem;
+  padding: 0.4rem 0.7rem;
 }
-.pill.on { color: var(--ok); }
-.pill.off { color: var(--err); }
-
-.now h1 { font-size: 1.25rem; font-weight: 600; }
-.now p { color: var(--dim); }
 
 button {
   background: var(--panel);
