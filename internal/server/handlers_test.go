@@ -59,17 +59,25 @@ type fakeRunner struct {
 	lastParams map[string]any
 	job        *ipc.Job
 	err        error
+	errFn      func(ctx context.Context) error
+	okFn       func()
 }
 
 func (f *fakeRunner) Call(_ context.Context, _ string, _ any) (*ipc.Response, error) {
 	return &ipc.Response{OK: true}, nil
 }
 
-func (f *fakeRunner) SubmitJob(_ context.Context, op string, p any) (*ipc.Job, error) {
+func (f *fakeRunner) SubmitJob(ctx context.Context, op string, p any) (*ipc.Job, error) {
 	f.lastOp = op
 	f.lastParams, _ = p.(map[string]any)
+	if f.errFn != nil {
+		return nil, f.errFn(ctx)
+	}
 	if f.err != nil {
 		return f.job, f.err
+	}
+	if f.okFn != nil {
+		f.okFn()
 	}
 	return f.job, nil
 }

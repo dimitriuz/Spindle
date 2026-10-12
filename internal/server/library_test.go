@@ -1,0 +1,152 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"cliamp-web/internal/ipc"
+)
+
+func libConfig(t *testing.T, fr *fakeRunner) Config {
+	cfg := authedConfig(t)
+	cfg.Runner = fr
+	return cfg
+}
+
+func libGet(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", path, nil)
+	r.Header.Set("X-Token", "deadbeef")
+	h.ServeHTTP(rec, r)
+	return rec
+}
+
+func TestLibraryPlaylistsPassesParamsThrough(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"total":120,"playlists":[{"id":"pl1","name":"One"}]}`)}}
+	h := New(libConfig(t, fr))
+	rec := libGet(t, h, "/api/library/navidrome/playlists?offset=100&limit=50")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"pl1"`) {
+		t.Fatalf("want verbatim passthrough, got %d %s", rec.Code, rec.Body)
+	}
+	if fr.lastOp != "provider.playlists" {
+		t.Fatalf("op: %s", fr.lastOp)
+	}
+	if fr.lastParams["provider"] != "navidrome" || fr.lastParams["offset"] != 100 || fr.lastParams["limit"] != 50 {
+		t.Fatalf("params must ride inside params: %v", fr.lastParams)
+	}
+}
+
+func TestLibraryValidation(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true}`)}}
+	h := New(libConfig(t, fr))
+	for _, path := range []string{
+		"/api/library/navidrome/playlists?offset=-1",
+		"/api/library/navidrome/playlists?limit=0",
+		"/api/library/navidrome/playlists?limit=abc",
+		// unknown kinds never build provider.<kind> ops (GET must not reach
+		// side-effecting ops like provider.load).
+		"/api/library/navidrome/load",
+		"/api/library/navidrome/albums2",
+	} {
+		if rec := libGet(t, h, path); rec.Code != 400 {
+			t.Fatalf("%s want 400 got %d", path, rec.Code)
+		}
+	}
+	// limit over 200 clamps rather than rejects
+	_ = libGet(t, h, "/api/library/navidrome/playlists?limit=9999")
+	if fr.lastParams["limit"] != 200 {
+		t.Fatalf("limit must clamp to 200, got %v", fr.lastParams["limit"])
+	}
+}
+
+func TestLibraryUpstreamErrorMaps502WithDetail(t *testing.T) {
+	fr := &fakeRunner{err: &ipc.IPCError{Code: "internal_error", Detail: `navidrome: connection refused`}}
+	h := New(libConfig(t, fr))
+	rec := libGet(t, h, "/api/library/navidrome/albums")
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("want 502 got %d", rec.Code)
+	}
+	var body map[string]any
+	json.NewDecoder(rec.Body).Decode(&body)
+	if body["detail"] != "navidrome: connection refused" || body["code"] != "upstream_error" {
+		t.Fatalf("detail must pass through: %v", body)
+	}
+}
+
+func TestLibraryOfflineMaps502(t *testing.T) {
+	fr := &fakeRunner{err: ipc.ErrNotConnected}
+	h := New(libConfig(t, fr))
+	rec := libGet(t, h, "/api/library/navidrome/albums")
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("want 502 got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "player offline") {
+		t.Fatalf("offline detail: %s", rec.Body)
+	}
+}
+
+func TestLibraryJobTimeout504(t *testing.T) {
+	fr := &fakeRunner{errFn: func(ctx context.Context) error {
+		<-ctx.Done() // never returns until the deadline
+		return ctx.Err()
+	}}
+	cfg := libConfig(t, fr)
+	cfg.LibraryTimeout = 20 * time.Millisecond
+	h := New(cfg)
+	rec := libGet(t, h, "/api/library/navidrome/albums")
+	if rec.Code != http.StatusGatewayTimeout || !strings.Contains(rec.Body.String(), "job_timeout") {
+		t.Fatalf("want 504 job_timeout got %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestLibrarySearchUncached(t *testing.T) {
+	calls := 0
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"total":0,"tracks":[]}`)}, okFn: func() { calls++ }}
+	h := New(libConfig(t, fr))
+	libGet(t, h, "/api/search/local?q=x")
+	libGet(t, h, "/api/search/local?q=x")
+	if calls != 2 {
+		t.Fatalf("search must never cache: %d upstream calls", calls)
+	}
+}
+
+func TestLibraryListingsCached(t *testing.T) {
+	calls := 0
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"total":0,"playlists":[]}`)}, okFn: func() { calls++ }}
+	h := New(libConfig(t, fr))
+	libGet(t, h, "/api/library/local/playlists")
+	libGet(t, h, "/api/library/local/playlists")
+	if calls != 1 {
+		t.Fatalf("second identical listing GET must be served from cache: %d", calls)
+	}
+}
+
+func TestLibraryRequiresToken(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{}`)}}
+	h := New(libConfig(t, fr))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/library/local/albums", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("library must sit behind protect, got %d", rec.Code)
+	}
+}
+
+func TestLibraryAlbumTracksParams(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"tracks":[]}`)}}
+	h := New(libConfig(t, fr))
+	libGet(t, h, "/api/library/navidrome/album/al1/tracks?offset=0&limit=50")
+	if fr.lastOp != "provider.album_tracks" || fr.lastParams["album"] != "al1" {
+		t.Fatalf("album tracks params: op=%s params=%v", fr.lastOp, fr.lastParams)
+	}
+	// the {kind} route must not shadow the album-tracks path
+	libGet(t, h, "/api/library/navidrome/artist/ar2/tracks")
+	if fr.lastOp != "provider.tracks" || fr.lastParams["id"] != "ar2" {
+		t.Fatalf("artist tracks params: op=%s params=%v", fr.lastOp, fr.lastParams)
+	}
+}

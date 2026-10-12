@@ -10,9 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"cliamp-web/internal/fakeplayer"
 )
 
 var testHTTP = &http.Client{Timeout: 2 * time.Second}
@@ -20,60 +21,16 @@ var testHTTP = &http.Client{Timeout: 2 * time.Second}
 // startFakePlayer answers the V2 methods the bridge uses at startup with a
 // fixed "playing" world: enough to prove the wiring end to end.
 func startFakePlayer(t *testing.T) string {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "s")
-	ln, err := net.Listen("unix", path)
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{
+		State: `{"state":"playing","revision":5,"playlist_revision":7}`,
+		Track: `{"title":"Fake Song"}`,
+		Caps:  `[{"name":"toggle"},{"name":"queue.list"}]`,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ln.Close() })
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				sc := bufio.NewScanner(bufio.NewReader(c))
-				for sc.Scan() {
-					var req map[string]json.RawMessage
-					if json.Unmarshal(sc.Bytes(), &req) != nil {
-						continue
-					}
-					var id, method string
-					_ = json.Unmarshal(req["id"], &id)
-					_ = json.Unmarshal(req["method"], &method)
-					switch method {
-					case "subscribe":
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true}\n", id)
-						fmt.Fprint(c, `{"event":"runtime.state","seq":1,"retained":true,"data":{"state":"playing","revision":5,"playlist_revision":7,"index":0,"track":{"title":"Fake Song"}}}`+"\n")
-					case "state.get":
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"snapshot\":{\"state\":\"playing\",\"revision\":5,\"playlist_revision\":7,\"track\":{\"title\":\"Fake Song\"}}}\n", id)
-					case "capabilities":
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"result\":[{\"name\":\"toggle\"},{\"name\":\"queue.list\"}]}\n", id)
-					case "operation.submit":
-						// real cliamp validates the envelope: "operation" must be
-						// top-level, a nested one is invalid_request.
-						var op string
-						_ = json.Unmarshal(req["operation"], &op)
-						if op == "" {
-							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":false,\"error\":{\"code\":\"invalid_request\",\"message\":\"invalid request\"}}\n", id)
-							break
-						}
-						result := `{"ok":true,"total":1,"tracks":[{"path":"/m/a.flac","title":"Fake Song"}]}`
-						if op == "playnext.list" {
-							result = `{"ok":true}`
-						}
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j1\",\"operation\":%q,\"state\":\"succeeded\",\"result\":%s}}\n", id, op, result)
-					default:
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true}\n", id)
-					}
-				}
-				c.Close()
-			}()
-		}
-	}()
-	return path
+	t.Cleanup(f.Close)
+	return f.Path
 }
 
 // TestPlaylistSignalFollowsCacheSwap pins the contract the browser relies on:
@@ -82,72 +39,16 @@ func startFakePlayer(t *testing.T) string {
 // event, so broadcasting the signal before absorbing would let the test
 // observe the old rows.
 func TestPlaylistSignalFollowsCacheSwap(t *testing.T) {
-	var mu sync.Mutex
-	rowTitle := "Row A"
-	var subConn net.Conn
-	setRow := func(s string) { mu.Lock(); rowTitle = s; mu.Unlock() }
-	getRow := func() string { mu.Lock(); defer mu.Unlock(); return rowTitle }
-
 	dir := t.TempDir()
-	sock := filepath.Join(dir, "s")
-	ln, err := net.Listen("unix", sock)
+	f, err := fakeplayer.Start(dir, fakeplayer.Options{
+		State: `{"state":"playing","revision":5,"playlist_revision":7}`,
+		Caps:  `[]`,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ln.Close() })
-	go func() {
-		for {
-			c, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				sc := bufio.NewScanner(bufio.NewReader(c))
-				for sc.Scan() {
-					var req map[string]json.RawMessage
-					if json.Unmarshal(sc.Bytes(), &req) != nil {
-						continue
-					}
-					var id, method, op string
-					_ = json.Unmarshal(req["id"], &id)
-					_ = json.Unmarshal(req["method"], &method)
-					_ = json.Unmarshal(req["operation"], &op)
-					switch method {
-					case "subscribe":
-						mu.Lock()
-						subConn = c
-						mu.Unlock()
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true}\n", id)
-						fmt.Fprint(c, `{"event":"runtime.state","seq":1,"retained":true,"data":{"state":"playing","revision":5,"playlist_revision":7}}`+"\n")
-					case "state.get":
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"snapshot\":{\"state\":\"playing\",\"revision\":5,\"playlist_revision\":7}}\n", id)
-					case "capabilities":
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"result\":[]}\n", id)
-					case "operation.submit":
-						switch op {
-						case "queue.list":
-							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j1\",\"operation\":\"queue.list\",\"state\":\"succeeded\",\"result\":{\"ok\":true,\"tracks\":[{\"title\":%q}]}}}\n", id, getRow())
-						case "playnext.list":
-							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j2\",\"operation\":\"playnext.list\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
-						case "make-change":
-							// rows change BEFORE the event exists on the wire
-							setRow("Row B")
-							mu.Lock()
-							if subConn != nil {
-								fmt.Fprint(subConn, `{"event":"runtime.playlist","seq":9,"data":{"revision":8,"playlist_revision":8}}`+"\n")
-							}
-							mu.Unlock()
-							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j3\",\"operation\":\"make-change\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
-						default:
-							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j9\",\"state\":\"succeeded\"}}\n", id)
-						}
-					default:
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true}\n", id)
-					}
-				}
-			}()
-		}
-	}()
+	t.Cleanup(f.Close)
+	sock := f.Path
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -361,4 +262,47 @@ func getJSONNoAuth(t *testing.T, url string) map[string]any {
 	var m map[string]any
 	json.NewDecoder(resp.Body).Decode(&m)
 	return m
+}
+
+func TestRunServesLibraryAndSearch(t *testing.T) {
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{
+		State: `{"state":"playing","revision":5,"playlist_revision":7}`,
+		Track: `{"title":"Fake Song"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	port := freePort(t)
+	go func() { _ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
+	st := readStatus(t, dir)
+	tok, _ := st["token"].(string)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		r := getJSON(t, base+"/api/library/providers", tok)
+		if r["ok"] == true {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("providers never came up: %v", r)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	r := getJSON(t, base+"/api/library/navidrome/playlists?offset=0&limit=50", tok)
+	if total, _ := r["total"].(float64); total != 120 {
+		t.Fatalf("want 120 playlists, got %v", r["total"])
+	}
+	s := getJSON(t, base+"/api/search/ytmusic?q=lofi", tok)
+	tracks, _ := s["tracks"].([]any)
+	if len(tracks) != 3 || tracks[0].(map[string]any)["stream"] != true {
+		t.Fatalf("search passthrough: %v", s)
+	}
+	if rec := getJSONNoAuth(t, base+"/api/library/local/albums"); rec["code"] == nil {
+		t.Fatalf("library must require token: %v", rec)
+	}
 }
