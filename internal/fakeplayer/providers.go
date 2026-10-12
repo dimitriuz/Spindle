@@ -86,6 +86,14 @@ func fixtureTracks(kind, id string) []map[string]any {
 		}
 	case "artist:ar2":
 		return []map[string]any{track("Album Three Track 1", "Artist B", "/fake/a3-0.flac", 300)}
+	case "playlist:pl1":
+		out := make([]map[string]any, 0, 3)
+		for i := range 3 {
+			out = append(out, track(fmt.Sprintf("Playlist One Track %d", i+1), "Artist A", "/fake/pl1-"+strconv.Itoa(i)+".flac", 200+i))
+		}
+		return out
+	case "playlist:pl-empty":
+		return []map[string]any{}
 	}
 	return []map[string]any{}
 }
@@ -155,6 +163,16 @@ func (f *Fake) providerOps(c net.Conn, id, op string, params json.RawMessage) bo
 		b, _ := json.Marshal(paged(fixtureTracks("album", p.Album), p.Offset, p.Limit, "tracks"))
 		ok(string(b))
 	case "provider.tracks":
+		// live precedence: id wins when both given; playlist drills playlists.
+		if p.Playlist != "" && p.ID == "" {
+			if p.Playlist == "nope" {
+				failJob(c, id, op, "navidrome: playlist not found (code 70)")
+				return true
+			}
+			b, _ := json.Marshal(paged(fixtureTracks("playlist", p.Playlist), p.Offset, p.Limit, "tracks"))
+			ok(string(b))
+			return true
+		}
 		if p.ID == "" {
 			failJob(c, id, op, "navidrome: missing parameter: 'id' (code 10)")
 			return true

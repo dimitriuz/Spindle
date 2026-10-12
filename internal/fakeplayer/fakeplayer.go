@@ -19,6 +19,9 @@ type Options struct {
 	Caps string
 	// Track is the raw track JSON embedded in the snapshot, "" for none.
 	Track string
+	// Lyrics is the raw lyrics result JSON for the lyrics op; "" ⇒ the
+	// live "no lyrics found" failure.
+	Lyrics string
 }
 
 type Fake struct {
@@ -28,6 +31,7 @@ type Fake struct {
 	ln       net.Listener
 	rowTitle string
 	subConn  net.Conn
+	lyrics   string
 }
 
 func Start(dir string, opts Options) (*Fake, error) {
@@ -37,7 +41,7 @@ func Start(dir string, opts Options) (*Fake, error) {
 	if opts.Caps == "" {
 		opts.Caps = `[{"name":"toggle"},{"name":"queue.list"}]`
 	}
-	f := &Fake{rowTitle: "Row A"}
+	f := &Fake{rowTitle: "Row A", lyrics: opts.Lyrics}
 	path := dir + "/s"
 	ln, err := net.Listen("unix", path)
 	if err != nil {
@@ -145,6 +149,12 @@ func (f *Fake) submit(c net.Conn, id, op string, params json.RawMessage) {
 		f.SetRow("Row B")
 		f.Push(`{"event":"runtime.playlist","seq":9,"data":{"revision":8,"playlist_revision":8}}`)
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j3\",\"operation\":\"make-change\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
+	case "lyrics":
+		if f.lyrics == "" {
+			failJob(c, id, op, "no lyrics found")
+			return
+		}
+		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"jl\",\"operation\":\"lyrics\",\"state\":\"succeeded\",\"result\":{\"ok\":true,\"lyrics\":%s}}}\n", id, f.lyrics)
 	default:
 		if f.providerOps(c, id, op, params) {
 			return
