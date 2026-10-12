@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import NowPlaying from "./components/NowPlaying.vue";
+import PlayNextList from "./components/PlayNextList.vue";
+import QueueList from "./components/QueueList.vue";
 import TransportBar from "./components/TransportBar.vue";
 import { store } from "./store";
 </script>
@@ -12,8 +14,9 @@ import { store } from "./store";
         {{ store.online ? "online" : "offline" }}
       </span>
     </header>
-
     <NowPlaying />
     <TransportBar />
+    <PlayNextList />
+    <QueueList />
   </main>
 </template>

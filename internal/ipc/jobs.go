@@ -50,7 +50,11 @@ func (c *Conn) SubmitJob(ctx context.Context, op string, params any) (*Job, erro
 			return job, ctx.Err()
 		case <-t.C:
 		}
-		jr, err := c.Call(ctx, "job.get", map[string]any{"job_id": job.ID})
+		// like operation, job_id rides the envelope (cliamp v2.0.1 rejects
+		// it inside params with invalid_params).
+		jr, err := c.roundtrip(ctx, map[string]any{
+			"version": 2, "method": "job.get", "job_id": job.ID,
+		})
 		if err != nil {
 			return job, err
 		}
