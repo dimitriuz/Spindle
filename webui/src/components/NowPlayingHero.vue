@@ -10,6 +10,8 @@ import {
 } from "reka-ui";
 import { runCommand, store, withRevision } from "../store";
 import { fmtPos } from "../lib/format";
+import { HttpError, getLyrics, type LyricLine } from "../api";
+import { lyricIndex } from "../lib/lyrics";
 
 const snap = computed(() => store.snapshot);
 const duration = computed<number>(() => Number(snap.value.duration ?? 0));
@@ -111,6 +113,43 @@ const upNext = computed(() => {
 function playAt(index: number) {
   withRevision("queue.play", { index });
 }
+
+const showLyrics = ref(false);
+const lyricLines = ref<LyricLine[]>([]);
+const lyricErr = ref("");
+let lyricGen = 0;
+
+async function openLyrics() {
+  showLyrics.value = true;
+  const gen = ++lyricGen; // Review Focus 3: drop replies after close/reopen
+  lyricErr.value = "";
+  lyricLines.value = [];
+  try {
+    const r = await getLyrics();
+    if (gen !== lyricGen) return;
+    lyricLines.value = r.lyrics ?? [];
+  } catch (e: unknown) {
+    if (gen !== lyricGen) return;
+    lyricErr.value = e instanceof HttpError ? e.detail || `http ${e.status}` : "unreachable";
+  }
+}
+function closeLyrics() {
+  lyricGen++;
+  showLyrics.value = false;
+  lyricLines.value = [];
+  lyricErr.value = "";
+}
+const seekPos = computed(() => Number(snap.value.seek_position ?? 0));
+const activeIdx = computed(() => lyricIndex(lyricLines.value, seekPos.value));
+watch(activeIdx, (i) => {
+  if (!showLyrics.value || i < 0) return;
+  document
+    .querySelector(`.lyrics li[data-i="${i}"]`)
+    ?.scrollIntoView({ block: "center", behavior: "smooth" });
+});
+function seekLyric(line: LyricLine) {
+  runCommand("seek.absolute", { value: line.start });
+}
 </script>
 
 <template>
@@ -172,6 +211,7 @@ function playAt(index: number) {
       >
         ⏹
       </button>
+      <button class="lyr-btn" :disabled="!snap.track?.path" @click="openLyrics">lyrics</button>
     </div>
 
     <div class="modes">
@@ -225,6 +265,18 @@ function playAt(index: number) {
         <span class="nx-a">{{ row.artist ? "· " + String(row.artist) : "" }}</span>
       </li>
     </ul>
+
+    <div v-if="showLyrics" class="lyrics-bg" @click="closeLyrics">
+      <div class="lyrics" @click.stop>
+        <p v-if="lyricErr" class="lry-err">{{ lyricErr === "no lyrics found" ? "no lyrics for this track" : lyricErr }}</p>
+        <p v-else-if="!lyricLines.length" class="lry-err">no lyrics for this track</p>
+        <ul v-else>
+          <li v-for="(line, i) in lyricLines" :key="i" :data-i="i" :class="{ on: i === activeIdx }" @click="seekLyric(line)">
+            {{ line.text }}
+          </li>
+        </ul>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -402,4 +454,10 @@ function playAt(index: number) {
 }
 .nx-t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nx-a { color: var(--muted); font-size: 0.8rem; flex: none; max-width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lyr-btn { font-size: 0.75rem; padding: 0.2rem 0.6rem; color: var(--accent); }
+.lyrics-bg { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65); z-index: 40; display: flex; align-items: flex-end; }
+.lyrics { background: var(--panel); border-top: 1px solid var(--border); border-radius: 12px 12px 0 0; width: 100%; max-width: 720px; margin: 0 auto; max-height: 70dvh; overflow-y: auto; padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)); }
+.lyrics li { padding: 0.3rem 0.4rem; color: var(--muted); border-radius: 6px; }
+.lyrics li.on { color: var(--fg); background: #1c1f25; }
+.lry-err { color: var(--muted); padding: 0.5rem 0; }
 </style>

@@ -154,3 +154,12 @@ export const searchProvider = (
   req<ListReply>(
     `/api/search/${encodeURIComponent(provider)}?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`,
   );
+
+export interface LyricLine {
+  start: number;
+  text: string;
+}
+export interface LyricsReply {
+  lyrics?: LyricLine[];
+}
+export const getLyrics = () => req<LyricsReply>("/api/lyrics");
