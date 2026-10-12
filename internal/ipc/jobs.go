@@ -2,8 +2,15 @@ package ipc
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 )
+
+// ErrNoJob means cliamp answered a job-carrying method with no job object.
+// There is nothing to poll and nothing to hand the browser, so the V2 reply is
+// treated as the protocol violation it is.
+var ErrNoJob = errors.New("reply carried no job")
 
 // jobPoll is how often a non-final job is re-read with job.get. 200 ms keeps a
 // command well inside the browser's 10 s budget without leaning on the daemon
@@ -18,7 +25,8 @@ var terminal = map[string]bool{"succeeded": true, "failed": true, "canceled": tr
 // with job.get while cliamp says it is still running. A failed job comes back
 // with its inline IPCError so the HTTP layer can map conflict to 409. The last
 // known job is returned alongside the error when the wait is cut short, so the
-// caller can still tell the browser which state the job was in.
+// caller can still tell the browser which state the job was in. A reply that
+// carries no job comes back as ErrNoJob.
 func (c *Conn) SubmitJob(ctx context.Context, op string, params any) (*Job, error) {
 	req := map[string]any{"operation": op}
 	if params != nil {
@@ -29,7 +37,10 @@ func (c *Conn) SubmitJob(ctx context.Context, op string, params any) (*Job, erro
 		return nil, err
 	}
 	job := resp.Job
-	for job != nil && !terminal[job.State] {
+	if job == nil {
+		return nil, fmt.Errorf("operation.submit %s: %w", op, ErrNoJob)
+	}
+	for !terminal[job.State] {
 		t := time.NewTimer(jobPoll)
 		select {
 		case <-ctx.Done():
@@ -41,11 +52,12 @@ func (c *Conn) SubmitJob(ctx context.Context, op string, params any) (*Job, erro
 		if err != nil {
 			return job, err
 		}
-		if jr.Job != nil {
-			job = jr.Job
+		if jr.Job == nil {
+			return job, fmt.Errorf("job.get %s: %w", job.ID, ErrNoJob)
 		}
+		job = jr.Job
 	}
-	if job != nil && job.State == "failed" && job.Error != nil {
+	if job.State == "failed" && job.Error != nil {
 		return job, job.Error
 	}
 	return job, nil

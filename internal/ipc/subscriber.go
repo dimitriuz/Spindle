@@ -20,6 +20,7 @@ type Subscriber struct {
 	socket   string
 	topics   []string
 	log      *slog.Logger
+	dial     func(ctx context.Context, addr string) (net.Conn, error) // tests swap this out
 	onEvent  func(Event)
 	onOnline func(bool)
 	minBack  time.Duration
@@ -28,13 +29,16 @@ type Subscriber struct {
 
 // NewSubscriber builds the event connection. onOnline reports subscription
 // transitions so the bridge can tell its SSE clients their view went stale;
-// either callback may be nil.
+// either callback may be nil. Both callbacks run on Run's goroutine, in event
+// order, and must not block: a slow callback stalls the subscription.
 func NewSubscriber(socket string, topics []string, onEvent func(Event), onOnline func(bool)) *Subscriber {
 	return newSubscriberLadder(socket, topics, onEvent, onOnline, minBackoff, maxBackoff)
 }
 
-// newSubscriberLadder lets tests watch a whole backoff ladder inside a second.
+// newSubscriberLadder lets tests watch a whole backoff ladder inside a second;
+// the returned Subscriber's dial field is theirs to replace.
 func newSubscriberLadder(socket string, topics []string, onEvent func(Event), onOnline func(bool), minBack, maxBack time.Duration) *Subscriber {
+	dialer := &net.Dialer{}
 	return &Subscriber{
 		socket:   socket,
 		topics:   topics,
@@ -43,6 +47,9 @@ func newSubscriberLadder(socket string, topics []string, onEvent func(Event), on
 		onOnline: onOnline,
 		minBack:  minBack,
 		maxBack:  maxBack,
+		dial: func(ctx context.Context, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "unix", addr)
+		},
 	}
 }
 
@@ -52,7 +59,7 @@ func newSubscriberLadder(socket string, topics []string, onEvent func(Event), on
 func (s *Subscriber) Run(ctx context.Context) {
 	backoff := s.minBack
 	for ctx.Err() == nil {
-		nc, err := net.Dial("unix", s.socket)
+		nc, err := s.dial(ctx, s.socket)
 		if err != nil {
 			if !sleepCtx(ctx, backoff) {
 				return

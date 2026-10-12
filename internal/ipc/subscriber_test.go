@@ -3,6 +3,7 @@ package ipc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"path/filepath"
 	"sync"
@@ -406,26 +407,64 @@ func TestSubscriberRunStopsOnCancel(t *testing.T) {
 // Backoff ladder
 // ---------------------------------------------------------------------------
 
-// TestSubscriberBackoffGrowsWhileDisconnected: while cliamp is down the loop
-// steps back instead of hammering the socket path.
+// TestSubscriberBackoffGrowsWhileDisconnected pins the ladder by watching the
+// dial attempts themselves, so no assertion rides on where the scheduler happens
+// to put a wall-clock boundary. Nothing listens on the socket, so every attempt
+// fails and the gap between attempts has to double until it hits the cap.
 func TestSubscriberBackoffGrowsWhileDisconnected(t *testing.T) {
 	path := sockPath(t)
-	start := time.Now()
+	var mu sync.Mutex
+	var attempts []time.Time
+	var addrs []string
+	const maxStep = 250 * time.Millisecond
 	s := newSubscriberLadder(path, []string{"runtime.state"}, nil, nil,
-		100*time.Millisecond, 5*time.Second)
+		100*time.Millisecond, maxStep)
+	s.dial = func(ctx context.Context, addr string) (net.Conn, error) {
+		mu.Lock()
+		attempts = append(attempts, time.Now())
+		addrs = append(addrs, addr)
+		mu.Unlock()
+		return nil, errors.New("connect: no such file or directory")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go s.Run(ctx)
 
-	time.Sleep(350 * time.Millisecond) // failed dials at ~0, ~100, ~300ms
-	peer := newStreamPeer(t, path, nil, true)
-	if !poll(2*time.Second, func() bool { return peer.subscribes() >= 1 }) {
-		t.Fatal("the loop never connected once a socket existed")
+	// min 100ms, cap 250ms: attempts at ~0, 100, 300, 550, 800ms.
+	const want = 5
+	if !poll(3*time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(attempts) >= want
+	}) {
+		mu.Lock()
+		n := len(attempts)
+		mu.Unlock()
+		t.Fatalf("%d dial attempts in 3s, want %d", n, want)
 	}
-	// The ladder's next failed dial is at ~700ms. A loop that redialled every
-	// 100ms instead of stepping back would be in here by ~450ms.
-	if d := time.Since(start); d < 600*time.Millisecond {
-		t.Fatalf("connected after %v: the redial ladder did not step back", d)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, addr := range addrs {
+		if addr != path {
+			t.Fatalf("dialled %q, want the subscriber socket %q", addr, path)
+		}
+	}
+	var gaps []time.Duration
+	for i := range attempts[1:] {
+		gaps = append(gaps, attempts[i+1].Sub(attempts[i]))
+	}
+	// A timer never fires early, so each step's floor is exact: one min step, a
+	// doubled one, then the cap twice over (~100, 200, 250, 250ms).
+	for i, floor := range []time.Duration{
+		90 * time.Millisecond, 180 * time.Millisecond, 220 * time.Millisecond, 220 * time.Millisecond} {
+		if gaps[i] < floor {
+			t.Fatalf("step %d was %v, want at least %v: the ladder must step back, not hammer the socket",
+				i, gaps[i], floor)
+		}
+	}
+	// Once it reaches the cap it stays there instead of doubling past it.
+	if gaps[3] > gaps[2]+gaps[2]/2 {
+		t.Fatalf("step 3 was %v after %v: the ladder grew past its %v cap", gaps[3], gaps[2], maxStep)
 	}
 }
 

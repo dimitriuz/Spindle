@@ -23,7 +23,7 @@ type IPCError struct{ Code, Detail string }
 func (e *IPCError) Error() string { return e.Code + ": " + e.Detail }
 
 // Event is a pushed V2 event. Conn's command socket ignores them; Subscriber
-// (Task 4) owns the event stream.
+// owns the event stream.
 type Event struct {
 	Topic    string          `json:"event"`
 	Seq      int64           `json:"seq"`
@@ -31,7 +31,7 @@ type Event struct {
 	Data     json.RawMessage `json:"data"`
 }
 
-// Job is a long-running operation handle. SubmitJob lands in Task 3.
+// Job is a long-running operation handle; SubmitJob waits for one to finish.
 type Job struct {
 	ID        string          `json:"id"`
 	Operation string          `json:"operation"`
@@ -52,12 +52,16 @@ type Response struct {
 	Raw      json.RawMessage `json:"-"`
 }
 
-// OpRunner is how the HTTP layer talks to cliamp. Conn implements Call here;
-// Task 3 adds SubmitJob. The signature is fixed for T1/T2/T3/T7.
+// OpRunner is how the HTTP layer talks to cliamp: Call for a plain request,
+// SubmitJob for an operation that may run for a while. The signature is fixed
+// for T1/T2/T3/T7.
 type OpRunner interface {
 	Call(ctx context.Context, method string, params any) (*Response, error)
 	SubmitJob(ctx context.Context, op string, params any) (*Job, error)
 }
+
+// Conn has to keep satisfying the interface the HTTP layer holds.
+var _ OpRunner = (*Conn)(nil)
 
 var (
 	ErrNotConnected  = errors.New("cliamp socket not connected")
@@ -307,7 +311,7 @@ func (c *Conn) readLoop(st *connState) error {
 			continue // garbage line: skip, never crash
 		}
 		idv, hasID := raw["id"]
-		if !hasID { // events belong to Subscriber (Task 4)
+		if !hasID { // events belong to the Subscriber's own connection
 			continue
 		}
 		var id string

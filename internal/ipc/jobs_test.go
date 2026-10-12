@@ -119,3 +119,53 @@ func TestSubmitJobPollsEveryTwoHundredMs(t *testing.T) {
 		t.Fatalf("polled job.get %d times in 550ms, want 1..3 (one poll per 200ms)", gets)
 	}
 }
+
+// TestSubmitJobRejectsSubmitWithoutJob: an ok:true submit reply with no job
+// object leaves the bridge with nothing to poll and nothing to report, so it is
+// a protocol violation rather than a finished command.
+func TestSubmitJobRejectsSubmitWithoutJob(t *testing.T) {
+	f := newFakeIPC(t, func(req map[string]any) []string {
+		return []string{`{"version":2,"id":"` + req["id"].(string) + `","ok":true,"snapshot":{"revision":3}}`}
+	})
+	c := NewConn(f.path)
+	defer c.Close()
+	job, err := c.SubmitJob(context.Background(), "play", nil)
+	if !errors.Is(err, ErrNoJob) {
+		t.Fatalf("want ErrNoJob, got %v", err)
+	}
+	if job != nil {
+		t.Errorf("no job may be reported, got %+v", job)
+	}
+	if n := f.count(); n != 1 {
+		t.Errorf("%d requests, want 1: a submit with no job must not start polling", n)
+	}
+}
+
+// TestSubmitJobStopsWhenPollLosesTheJob: cliamp can forget a job (restart, ring
+// pruning) while we poll it. The last known state comes back with the error,
+// and the loop must not keep asking for a job that is not there.
+func TestSubmitJobStopsWhenPollLosesTheJob(t *testing.T) {
+	f := newFakeIPC(t, func(req map[string]any) []string {
+		if req["method"] == "operation.submit" {
+			return []string{`{"version":2,"id":"` + req["id"].(string) + `","ok":true,"job":{"id":"j1","operation":"play","state":"running"}}`}
+		}
+		return []string{`{"version":2,"id":"` + req["id"].(string) + `","ok":true}`}
+	})
+	c := NewConn(f.path)
+	defer c.Close()
+	// Bounded on purpose: a loop that does not stop when job.get answers with
+	// no job would poll forever, so the deadline turns that regression into a
+	// clean failure rather than a hung suite.
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+	job, err := c.SubmitJob(ctx, "play", nil)
+	if !errors.Is(err, ErrNoJob) {
+		t.Fatalf("want ErrNoJob, got %v", err)
+	}
+	if job == nil || job.State != "running" {
+		t.Fatalf("the last known job must come back with the error, got %+v", job)
+	}
+	if n := f.count(); n != 2 {
+		t.Errorf("%d requests, want exactly submit + one job.get", n)
+	}
+}
