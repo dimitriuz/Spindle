@@ -132,7 +132,8 @@ GET /api/search/{provider}?q&offset&limit        → provider.search    no cache
 
 ### 5.2 Web UI shell
 
-- `App.vue`: `view = ref<'nowplaying'|'queue'|'browse'>` (default `queue`),
+- `App.vue`: `view = ref<'nowplaying'|'queue'|'browse'>` (default `nowplaying` —
+  the app opens on the playback page),
   bottom tab bar, mini player bar (`MiniPlayer.vue`) visible on all views except
   Now Playing; tapping mini → Now Playing. No router dependency.
 - `NowPlayingHero.vue`: absorbs seek/volume/shuffle/repeat/transport logic from
