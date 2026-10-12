@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"path/filepath"
 	"sync"
@@ -33,7 +34,6 @@ type streamPeer struct {
 	mu     sync.Mutex
 	conns  []net.Conn
 	reqs   []map[string]any
-	acks   []time.Time
 	script func(w *streamWriter, round int)
 	hold   bool
 }
@@ -66,7 +66,6 @@ func (p *streamPeer) serve() {
 			}
 			p.mu.Lock()
 			p.reqs = append(p.reqs, req)
-			p.acks = append(p.acks, time.Now())
 			round := len(p.reqs)
 			p.mu.Unlock()
 			w := &streamWriter{c: c, enc: json.NewEncoder(c)}
@@ -75,7 +74,7 @@ func (p *streamPeer) serve() {
 				p.script(w, round)
 			}
 			if p.hold {
-				select {} // the stream stays open until the test hangs it up
+				io.Copy(io.Discard, c) // parked until close() hangs us up
 			}
 			c.Close()
 		}()
@@ -93,30 +92,10 @@ func (p *streamPeer) close() {
 	}
 }
 
-// hangup stands in for cliamp going away: every live stream closes.
-func (p *streamPeer) hangup() {
-	p.mu.Lock()
-	conns := p.conns
-	p.conns = nil
-	p.mu.Unlock()
-	for _, c := range conns {
-		c.Close()
-	}
-}
-
 func (p *streamPeer) subscribes() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.reqs)
-}
-
-func (p *streamPeer) firstSubscribe() map[string]any {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if len(p.reqs) == 0 {
-		return nil
-	}
-	return p.reqs[0]
 }
 
 // ---------------------------------------------------------------------------

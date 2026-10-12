@@ -76,10 +76,11 @@ const (
 	// directions: inbound violations retire the generation, outbound ones are
 	// rejected before anything reaches the peer.
 	maxLine = 1 << 20
-	// minBackoff/maxBackoff bound the redial ladder. The ceiling stays under
-	// dialGrace on purpose: a ladder step longer than the call grace would
-	// make callers time out while the loop is asleep, even after the socket is
-	// back.
+	// minBackoff/maxBackoff bound the redial ladder. The ceiling sits above
+	// dialGrace on purpose: a caller that arrives mid-step while cliamp is
+	// down spends its grace and gets one retryable ErrNotConnected, but a
+	// socket whose file reappears gets dialed early because stale() retires
+	// the zombie and kickNow wakes the loop.
 	minBackoff = 500 * time.Millisecond
 	maxBackoff = 5 * time.Second
 	// writeGrace bounds how long one frame may sit in the socket buffer when
