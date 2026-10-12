@@ -35,13 +35,13 @@ func TestSubmitJobPollsUntilTerminal(t *testing.T) {
 		t.Fatal("expected submit + at least one job.get")
 	}
 
-	// The request bodies are the daemon's contract: operation on the submit,
-	// job_id on the poll.
+	// The request bodies are the daemon's contract: "operation" on the submit
+	// envelope itself (cliamp v2.0.1 rejects a nested one), "job_id" in the
+	// poll's params.
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	submit, _ := f.received[0]["params"].(map[string]any)
-	if submit["operation"] != "play" {
-		t.Errorf("operation.submit params = %v, want operation=play", submit)
+	if f.received[0]["operation"] != "play" {
+		t.Errorf("operation.submit envelope = %v, want operation=play", f.received[0])
 	}
 	poll, _ := f.received[1]["params"].(map[string]any)
 	if poll["job_id"] != jobID {

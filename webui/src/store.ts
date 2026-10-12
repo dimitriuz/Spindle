@@ -41,7 +41,7 @@ export async function refreshQueue() {
 export async function refreshCaps() {
   try {
     const c = await api.getCaps();
-    store.caps = new Set(c.operations ?? []);
+    store.caps = new Set((c.result ?? []).map((o) => o.name));
   } catch {
     /* caps stay unknown; buttons stay enabled */
   }

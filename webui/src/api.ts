@@ -50,7 +50,8 @@ export interface JobReply {
 
 export const getState = () => req<Record<string, any>>("/api/state");
 export const getQueue = () => req<Queue>("/api/queue");
-export const getCaps = () => req<{ operations?: string[] }>("/api/capabilities");
+export const getCaps = () =>
+  req<{ result?: { name: string }[] }>("/api/capabilities");
 
 export function command(op: string, params: Record<string, unknown> = {}) {
   return req<JobReply>("/api/command", {

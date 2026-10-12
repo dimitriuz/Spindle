@@ -127,8 +127,10 @@ func (c *Cache) PlaylistRevision() int64 {
 
 // absorbArray finds the track array in a queue.list/playnext.list result
 // ({"tracks":[..]}, {"items":[..]}, or a bare array) and applies the cap.
-// ok=false means the reply had no recognizable array; callers then keep the
-// previous rows rather than pretending the playlist emptied.
+// ok=false means the reply is unrecognizable; callers then keep the previous
+// rows rather than pretending the playlist emptied. A successful result with
+// the array field omitted (cliamp v2 sends {"ok":true,"index":-1} when empty)
+// is an emptied list, not garbage.
 func absorbArray(res json.RawMessage) (array json.RawMessage, count int, truncated bool, ok bool) {
 	var raw json.RawMessage
 	var obj map[string]json.RawMessage
@@ -136,6 +138,9 @@ func absorbArray(res json.RawMessage) (array json.RawMessage, count int, truncat
 		raw = obj["tracks"]
 		if len(raw) == 0 {
 			raw = obj["items"]
+		}
+		if len(raw) == 0 && string(obj["ok"]) == "true" {
+			return json.RawMessage(`[]`), 0, false, true
 		}
 	} else {
 		raw = res // bare array

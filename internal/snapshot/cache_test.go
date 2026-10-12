@@ -107,6 +107,20 @@ func TestAbsorbQueueResultShapesAndTruncate(t *testing.T) {
 	}
 }
 
+// cliamp v2 omits the array field from successful-but-empty list results;
+// absorbing one must clear the cached rows, not keep stale ones.
+func TestAbsorbEmptyOkResultClears(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(json.RawMessage(`{"tracks":[{"path":"a"}]}`), 3)
+	c.AbsorbPlayNextResult(json.RawMessage(`{"items":[{"path":"n1"}]}`), 3)
+	c.AbsorbQueueResult(json.RawMessage(`{"ok":true,"index":-1}`), 4)
+	c.AbsorbPlayNextResult(json.RawMessage(`{"ok":true}`), 4)
+	q := c.Queue()
+	if q.Count != 0 || string(q.Tracks) != `[]` || string(q.PlayNext) != `[]` {
+		t.Fatalf("empty ok result must clear rows: %+v", q)
+	}
+}
+
 func TestCapsRoundTrip(t *testing.T) {
 	c := NewCache()
 	if len(c.Caps()) != 0 {

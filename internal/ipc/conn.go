@@ -346,6 +346,17 @@ func (c *Conn) Call(ctx context.Context, method string, params any) (*Response, 
 	if params != nil {
 		req["params"] = params
 	}
+	return c.roundtrip(ctx, req)
+}
+
+// roundtrip sends a pre-built V2 envelope. Calls that need extra top-level
+// fields — operation.submit carries "operation" at the envelope level — build
+// their map and come through here; cliamp rejects nested variants with
+// invalid_request.
+func (c *Conn) roundtrip(ctx context.Context, req map[string]any) (*Response, error) {
+	if _, ok := req["id"].(string); !ok {
+		req["id"] = newID()
+	}
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return nil, err

@@ -28,11 +28,13 @@ var terminal = map[string]bool{"succeeded": true, "failed": true, "canceled": tr
 // caller can still tell the browser which state the job was in. A reply that
 // carries no job comes back as ErrNoJob.
 func (c *Conn) SubmitJob(ctx context.Context, op string, params any) (*Job, error) {
-	req := map[string]any{"operation": op}
+	// cliamp's V2 envelope carries "operation" top-level; a nested one is
+	// rejected with invalid_request (verified against cliamp v2.0.1).
+	req := map[string]any{"version": 2, "method": "operation.submit", "operation": op}
 	if params != nil {
 		req["params"] = params
 	}
-	resp, err := c.Call(ctx, "operation.submit", req)
+	resp, err := c.roundtrip(ctx, req)
 	if err != nil {
 		return nil, err
 	}

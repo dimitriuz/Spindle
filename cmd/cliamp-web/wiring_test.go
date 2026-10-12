@@ -49,17 +49,21 @@ func startFakePlayer(t *testing.T) string {
 					case "state.get":
 						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"snapshot\":{\"state\":\"playing\",\"revision\":5,\"playlist_revision\":7,\"track\":{\"title\":\"Fake Song\"}}}\n", id)
 					case "capabilities":
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"operations\":[\"toggle\",\"queue.list\"]}\n", id)
+						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"result\":[{\"name\":\"toggle\"},{\"name\":\"queue.list\"}]}\n", id)
 					case "operation.submit":
-						var p struct {
-							Operation string `json:"operation"`
+						// real cliamp validates the envelope: "operation" must be
+						// top-level, a nested one is invalid_request.
+						var op string
+						_ = json.Unmarshal(req["operation"], &op)
+						if op == "" {
+							fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":false,\"error\":{\"code\":\"invalid_request\",\"message\":\"invalid request\"}}\n", id)
+							break
 						}
-						_ = json.Unmarshal(req["params"], &p)
-						result := `{"tracks":[{"path":"/m/a.flac","title":"Fake Song"}]}`
-						if p.Operation == "playnext.list" {
-							result = `{"items":[]}`
+						result := `{"ok":true,"total":1,"tracks":[{"path":"/m/a.flac","title":"Fake Song"}]}`
+						if op == "playnext.list" {
+							result = `{"ok":true}`
 						}
-						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j1\",\"operation\":%q,\"state\":\"succeeded\",\"result\":%s}}\n", id, p.Operation, result)
+						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j1\",\"operation\":%q,\"state\":\"succeeded\",\"result\":%s}}\n", id, op, result)
 					default:
 						fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true}\n", id)
 					}
@@ -165,8 +169,8 @@ func TestRunWiresFakePlayer(t *testing.T) {
 	}
 
 	caps := getJSON(t, base+"/api/capabilities", tok)
-	if ops, _ := caps["operations"].([]any); len(ops) != 2 {
-		t.Fatalf("caps missing: %v", caps)
+	if ops, _ := caps["result"].([]any); len(ops) != 2 {
+		t.Fatalf("capabilities envelope not passed through: %v", caps)
 	}
 
 	// command path reaches the fake player
