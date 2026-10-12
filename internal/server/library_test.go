@@ -150,3 +150,31 @@ func TestLibraryAlbumTracksParams(t *testing.T) {
 		t.Fatalf("artist tracks params: op=%s params=%v", fr.lastOp, fr.lastParams)
 	}
 }
+
+func TestPlaylistTracksRoute(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"total":3,"tracks":[]}`)}}
+	h := New(libConfig(t, fr))
+	rec := libGet(t, h, "/api/library/navidrome/playlist/pl1/tracks?offset=5&limit=10")
+	if rec.Code != 200 || fr.lastOp != "provider.tracks" {
+		t.Fatalf("want 200 provider.tracks, got %d %q", rec.Code, fr.lastOp)
+	}
+	if fr.lastParams["playlist"] != "pl1" || fr.lastParams["offset"] != 5 || fr.lastParams["limit"] != 10 {
+		t.Fatalf("params: %v", fr.lastParams)
+	}
+	// Review Focus 4: this route can NEVER smuggle an id param upstream.
+	if _, bad := fr.lastParams["id"]; bad {
+		t.Fatalf("id must never reach provider.tracks params: %v", fr.lastParams)
+	}
+	if rec := libGet(t, h, "/api/library/navidrome/playlist/pl1/tracks?offset=-1"); rec.Code != 400 {
+		t.Fatalf("offset -1 want 400 got %d", rec.Code)
+	}
+}
+
+func TestPlaylistNotFoundMaps502(t *testing.T) {
+	fr := &fakeRunner{err: &ipc.IPCError{Code: "internal_error", Detail: "navidrome: playlist not found (code 70)"}}
+	h := New(libConfig(t, fr))
+	rec := libGet(t, h, "/api/library/navidrome/playlist/nope/tracks")
+	if rec.Code != 502 || !strings.Contains(rec.Body.String(), "playlist not found (code 70)") {
+		t.Fatalf("want 502+detail, got %d %s", rec.Code, rec.Body)
+	}
+}
