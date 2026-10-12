@@ -88,7 +88,7 @@ function searchValue(ev: Event): string {
     <ul class="rows">
       <li
         v-for="(row, i) in store.browse.list"
-        :key="row.id ?? String(row.title)"
+        :key="`${row.id ?? ''}|${String(row.title ?? '')}|${i}`"
         class="row"
       >
         <template v-if="store.browse.tab === 'albums' && !store.browse.stack.length">

@@ -49,6 +49,10 @@ func TestLibraryValidation(t *testing.T) {
 		"/api/library/navidrome/playlists?offset=-1",
 		"/api/library/navidrome/playlists?limit=0",
 		"/api/library/navidrome/playlists?limit=abc",
+		// unknown kinds never build provider.<kind> ops (GET must not reach
+		// side-effecting ops like provider.load).
+		"/api/library/navidrome/load",
+		"/api/library/navidrome/albums2",
 	} {
 		if rec := libGet(t, h, path); rec.Code != 400 {
 			t.Fatalf("%s want 400 got %d", path, rec.Code)

@@ -96,7 +96,14 @@ func (s *serverState) libraryList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
 		return
 	}
-	s.libraryGET(w, r, s.cfg.listCache, "provider."+r.PathValue("kind"), params)
+	// kind→op whitelist: only listing ops exist under this route; anything
+	// else (provider.load…) never reaches the player over a GET.
+	switch r.PathValue("kind") {
+	case "playlists", "albums", "artists", "catalog":
+		s.libraryGET(w, r, s.cfg.listCache, "provider."+r.PathValue("kind"), params)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+	}
 }
 
 func (s *serverState) libraryAlbumTracks(w http.ResponseWriter, r *http.Request) {
