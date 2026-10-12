@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"cliamp-web/internal/ipc"
 	"cliamp-web/internal/snapshot"
@@ -19,6 +20,22 @@ type Config struct {
 	Limiter *Limiter
 	Static  fs.FS
 	Logger  *slog.Logger
+
+	// LibraryTTL bounds library listing cache freshness (0 ⇒ 60 s).
+	LibraryTTL time.Duration
+	// LibraryTimeout caps one provider job wait (0 ⇒ 30 s).
+	LibraryTimeout time.Duration
+
+	listCache      *ttlcache
+	providersCache *ttlcache
+	noCache        *ttlcache
+}
+
+func (c *Config) libraryTimeout() time.Duration {
+	if c.LibraryTimeout == 0 {
+		return defaultLibraryTimeout
+	}
+	return c.LibraryTimeout
 }
 
 type serverState struct{ cfg Config }
@@ -27,6 +44,12 @@ type serverState struct{ cfg Config }
 // data endpoint; /api/health is token-free by design. Rate limiting joins
 // in Task 7, static SPA serving lands with it.
 func New(cfg Config) http.Handler {
+	if cfg.LibraryTTL == 0 {
+		cfg.LibraryTTL = defaultLibraryTTL
+	}
+	cfg.listCache = newTTLCache(cfg.LibraryTTL, 128, time.Now)
+	cfg.providersCache = newTTLCache(providersTTL, 4, time.Now)
+	cfg.noCache = newTTLCache(0, 1, time.Now)
 	s := &serverState{cfg: cfg}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
@@ -35,6 +58,11 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/capabilities", s.protect(http.HandlerFunc(s.capabilities)))
 	mux.Handle("GET /api/events", s.protect(http.HandlerFunc(s.events)))
 	mux.Handle("POST /api/command", s.protect(http.HandlerFunc(s.command)))
+	mux.Handle("GET /api/library/providers", s.protect(http.HandlerFunc(s.libraryProviders)))
+	mux.Handle("GET /api/library/{provider}/{kind}", s.protect(http.HandlerFunc(s.libraryList)))
+	mux.Handle("GET /api/library/{provider}/album/{id}/tracks", s.protect(http.HandlerFunc(s.libraryAlbumTracks)))
+	mux.Handle("GET /api/library/{provider}/artist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryArtistTracks)))
+	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))
 	mux.Handle("/", s.staticHandler())
 	return mux
 }
