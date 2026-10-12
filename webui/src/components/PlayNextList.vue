@@ -44,6 +44,7 @@ function clear() {
         <li v-for="(t, i) in items" :key="t.path + i">
           <span class="idx">{{ i + 1 }}</span>
           <span class="ttl" :title="t.path">{{ t.title ?? t.path }}</span>
+          <span class="art">{{ t.artist ? "· " + String(t.artist) : "" }}</span>
           <span class="tools">
             <button
               :disabled="!store.online || i === 0"
@@ -121,6 +122,15 @@ li {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.art {
+  color: var(--muted);
+  font-size: 0.8rem;
+  flex: none;
+  max-width: 38%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tools {
   display: flex;

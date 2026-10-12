@@ -109,7 +109,7 @@ function searchValue(ev: Event): string {
         </template>
         <template v-else>
           <span class="t">{{ row.title }}</span>
-          <span class="muted">{{ String(row.artist ?? "") }}</span>
+          <span class="muted">{{ row.artist ? "· " + String(row.artist) : "" }}</span>
           <button class="act" aria-label="play now" @click.stop="playTrack(row)">▶</button>
           <button class="act" aria-label="queue next" @click.stop="queueTrack(row)">+</button>
         </template>
@@ -185,24 +185,30 @@ function searchValue(ev: Event): string {
   gap: 0.3rem;
 }
 .row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
   border-radius: 8px;
-  padding: 0.3rem 0.5rem;
+  padding: 0.35rem 0.5rem;
 }
+.row:nth-child(odd) { background: #101216; }
 .drill {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
   color: var(--fg);
 }
-.muted {
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.t {
-  color: var(--fg);
-}
+.drill b { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.muted { color: var(--muted); font-size: 0.8rem; flex: none; max-width: 42%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sentinel {
   height: 1px;
 }
 .act {
+  flex: none;
   font-size: 0.75rem;
   padding: 0.05rem 0.5rem;
   border-radius: 5px;

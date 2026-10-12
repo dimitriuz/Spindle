@@ -221,7 +221,8 @@ function playAt(index: number) {
         class="next-li"
         @click="playAt(row.index ?? 0)"
       >
-        {{ row.title }}
+        <span class="nx-t">{{ row.title }}</span>
+        <span class="nx-a">{{ row.artist ? "· " + String(row.artist) : "" }}</span>
       </li>
     </ul>
   </section>
@@ -395,5 +396,10 @@ function playAt(index: number) {
 .next-li {
   cursor: pointer;
   color: var(--dim);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
 }
+.nx-t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx-a { color: var(--muted); font-size: 0.8rem; flex: none; max-width: 40%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

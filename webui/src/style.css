@@ -7,6 +7,10 @@
   --border: #23262c;
   --ok: #6cc06c;
   --err: #e06c60;
+  --surface: #14161a;
+  --muted: #8b93a0;
+  --error: var(--err);
+  --tabs-h: 3.1rem;
   font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
   font-size: 15px;
 }
@@ -22,7 +26,7 @@ body {
 .wrap {
   max-width: 720px;
   margin: 0 auto;
-  padding: 0.75rem 1rem 2rem;
+  padding: 0.75rem 1rem calc(var(--tabs-h) + 1rem + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 1rem;

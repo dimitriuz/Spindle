@@ -45,12 +45,18 @@ import { store, setView } from "./store";
 
 <style scoped>
 .tabs {
-  position: sticky;
+  position: fixed;
+  left: 0;
+  right: 0;
   bottom: 0;
+  z-index: 30;
   display: flex;
   gap: 4px;
-  padding: 6px 0;
-  background: var(--surface);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 6px 1rem calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--panel);
+  border-top: 1px solid var(--border);
 }
 .tabs button {
   flex: 1;
