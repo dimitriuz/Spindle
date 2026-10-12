@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import NowPlaying from "./components/NowPlaying.vue";
+import TransportBar from "./components/TransportBar.vue";
 import { store } from "./store";
 </script>
 
@@ -11,9 +13,7 @@ import { store } from "./store";
       </span>
     </header>
 
-    <section class="now">
-      <h1>{{ store.snapshot.track?.title ?? "—" }}</h1>
-      <p>{{ store.snapshot.track?.artist ?? "" }}</p>
-    </section>
+    <NowPlaying />
+    <TransportBar />
   </main>
 </template>
