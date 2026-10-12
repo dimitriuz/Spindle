@@ -135,6 +135,16 @@ export const libraryTracks = (
     `/api/library/${encodeURIComponent(provider)}/${detail}/${encodeURIComponent(id)}/tracks?offset=${offset}&limit=${limit}`,
   );
 
+export const libraryPlaylistTracks = (
+  provider: string,
+  id: string,
+  offset = 0,
+  limit = 50,
+) =>
+  req<ListReply>(
+    `/api/library/${encodeURIComponent(provider)}/playlist/${encodeURIComponent(id)}/tracks?offset=${offset}&limit=${limit}`,
+  );
+
 export const searchProvider = (
   provider: string,
   q: string,
