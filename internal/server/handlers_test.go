@@ -22,11 +22,29 @@ func TestHealthReportsOffline(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("want 200, got %d", rec.Code)
 	}
-	var body map[string]string
+	var body map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
 	if body["player"] != "offline" {
 		t.Fatalf("want player=offline, got %q", body["player"])
+	}
+	if body["ok"] == nil {
+		t.Fatalf("health must report ok, got %v", body)
+	}
+}
+
+func TestHealthReportsOnline(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Cache.SetOnline(true)
+	h := New(cfg)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/health", nil))
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["player"] != "online" {
+		t.Fatalf("want player=online, got %q", body["player"])
 	}
 }

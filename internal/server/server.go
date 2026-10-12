@@ -22,11 +22,14 @@ type Config struct {
 
 type serverState struct{ cfg Config }
 
-// New assembles the HTTP handler. Auth/Host/Limit middleware wrap /api/*;
-// the token-free health route is exempt.
+// New assembles the HTTP handler. Auth + Host guard (protect) wrap every
+// data endpoint; /api/health is token-free by design. Rate limiting joins
+// in Task 7, static SPA serving lands with it.
 func New(cfg Config) http.Handler {
 	s := &serverState{cfg: cfg}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
+	mux.Handle("GET /api/state", s.protect(http.HandlerFunc(s.state)))
+	mux.Handle("POST /api/command", s.protect(http.HandlerFunc(s.command)))
 	return mux
 }
