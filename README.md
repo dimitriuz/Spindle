@@ -30,6 +30,14 @@ and play-next editing), v2 adds choosing music itself:
   large transport/volume/shuffle/repeat controls, "Up next" tap-to-play; the
   `Now Playing · Queue · Browse` tab shell keeps a mini player on the other
   views.
+- Tap a playlist to page through its real tracks; ▶ plays any one,
+  “play playlist” (confirm) replaces the queue
+- Radio stations start on tap (confirm) — no load buttons anywhere
+- Lyrics sheet on the Now Playing page, current line follows the track,
+  tap a line to jump there
+- The tab bar and mini-player stay pinned; rows read “title · artist”
+  with ellipsis; the live connection reconnects by itself (lid close,
+  bridge restart, iOS sleep)
 
 Listings refresh on a bounded TTL (60 s default); a provider outage shows an
 inline retry banner that keeps the rows already on screen.
