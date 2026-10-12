@@ -10,7 +10,11 @@ import {
   closeDrill,
   retryBrowse,
   browseMore,
-  Drill,
+  browseSearch,
+  playTrack,
+  queueTrack,
+  loadPlaylist,
+  playAlbumDrill,
 } from "../store";
 
 onMounted(loadProviders);
@@ -35,6 +39,12 @@ onUnmounted(() => {
 const providerInfo = () =>
   store.browse.providers.find((p) => p.key === store.browse.provider) ??
   store.browse.providers[0];
+
+function searchValue(ev: Event): string {
+  const t = ev.target;
+  if (t !== null && "value" in t) return String(t.value);
+  return "";
+}
 </script>
 
 <template>
@@ -71,6 +81,10 @@ const providerInfo = () =>
       <button class="retry" @click="retryBrowse()">retry</button>
     </p>
 
+    <p v-if="store.browse.stack.length && store.browse.stack[store.browse.stack.length - 1].kind === 'album'" class="albumhead">
+      <button class="act" aria-label="play album" @click.stop="playAlbumDrill()">play album</button>
+    </p>
+
     <ul class="rows">
       <li
         v-for="(row, i) in store.browse.list"
@@ -91,13 +105,21 @@ const providerInfo = () =>
         <template v-else-if="(store.browse.tab === 'playlists' || store.browse.tab === 'catalog') && !store.browse.stack.length">
           <b>{{ row.name }}</b>
           <span class="muted">{{ row.track_count ?? "" }}</span>
+          <button v-if="row.id" class="act" aria-label="load playlist" @click.stop="loadPlaylist(row.id ?? '', row.name ?? '')">load</button>
         </template>
         <template v-else>
           <span class="t">{{ row.title }}</span>
           <span class="muted">{{ String(row.artist ?? "") }}</span>
+          <button class="act" aria-label="play now" @click.stop="playTrack(row)">▶</button>
+          <button class="act" aria-label="queue next" @click.stop="queueTrack(row)">+</button>
         </template>
       </li>
     </ul>
+    <div v-if="store.browse.tab === 'search' && !store.browse.stack.length" class="searchbar">
+      <input class="searchbox" type="text" placeholder="search this provider…" maxlength="80" :value="store.browse.query" @input="browseSearch(searchValue($event))" />
+      <span class="muted">{{ store.browse.query }}</span>
+    </div>
+
     <p
       v-if="!store.browse.loading && !store.browse.error && store.browse.list.length === 0"
       class="muted"
@@ -179,5 +201,28 @@ const providerInfo = () =>
 }
 .sentinel {
   height: 1px;
+}
+.act {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 5px;
+  color: var(--accent);
+}
+.searchbar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.searchbox {
+  flex: 1;
+  min-width: 14rem;
+  background: var(--surface);
+  color: var(--fg);
+}
+.albumhead {
+  color: var(--dim);
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
 }
 </style>

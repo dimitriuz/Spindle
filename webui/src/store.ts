@@ -129,6 +129,7 @@ const LIST_FIELDS: Record<string, "playlists" | "albums" | "artists" | "tracks">
   catalog: "playlists",
   album: "tracks",
   artist: "tracks",
+  search: "tracks",
 };
 
 export function errText(e: unknown): string {
@@ -222,13 +223,14 @@ export function browseMore() {
 async function fetchPage(kind: string, offset: number, reset: boolean) {
   const b = store.browse;
   if (!kind || b.loading) return;
+  if (kind === "search" && !b.query) return;
   b.loading = true;
   try {
     const top = b.stack[b.stack.length - 1];
     let reply: api.ListReply;
     const field = LIST_FIELDS[kind];
     if (kind === "album" && top) reply = await api.libraryTracks(b.provider, "album", top.id, offset);
-    else if (kind === "artist" && top) reply = await api.libraryTracks(b.provider, "artist", top.id, offset);
+    else if (kind === "search") reply = await api.searchProvider(b.provider, b.query, offset);
     else if (kind === "playlists" || kind === "albums" || kind === "artists" || kind === "catalog")
       reply = await api.libraryList(b.provider, kind, offset);
     else {
@@ -245,4 +247,40 @@ async function fetchPage(kind: string, offset: number, reset: boolean) {
   } finally {
     b.loading = false;
   }
+}
+
+// search debounce: one fetch 300 ms after the last keystroke, not per key.
+let searchTimer: number | undefined;
+export function browseSearch(q: string) {
+  if (searchTimer !== undefined) window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    const b = store.browse;
+    b.query = q;
+    if (b.tab === "search") void fetchPage("search", 0, true);
+  }, 300);
+}
+
+export function playTrack(row: api.BrowseRow) {
+  if (!row.path) return;
+  withRevision("track.play", { track: row.path });
+}
+
+export function queueTrack(row: api.BrowseRow) {
+  if (!row.path) return;
+  withRevision("track.queue", { track: row.path });
+}
+
+export function loadPlaylist(id: string, name: string) {
+  if (!id) return;
+  if (!window.confirm(`replace the queue with playlist "${name}"?`)) return;
+  runCommand("provider.load", { provider: store.browse.provider, playlist: id });
+}
+
+// album detail (drill stack top is an album): the "play album" button.
+export function playAlbumDrill() {
+  const b = store.browse;
+  const top = b.stack[b.stack.length - 1];
+  if (!top || top.kind !== "album") return;
+  if (!window.confirm(`replace the queue with album "${top.title}"?`)) return;
+  runCommand("provider.load_album", { provider: b.provider, album: top.id });
 }
