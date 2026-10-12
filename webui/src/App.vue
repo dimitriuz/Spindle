@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BrowseView from "./components/BrowseView.vue";
 import MiniPlayer from "./components/MiniPlayer.vue";
 import NowPlayingHero from "./components/NowPlayingHero.vue";
 import PlayNextList from "./components/PlayNextList.vue";
@@ -27,7 +28,7 @@ import { store, setView } from "./store";
       <QueueList />
     </template>
     <template v-else>
-      <p class="muted">browse lands in a moment…</p>
+      <BrowseView />
     </template>
 
     <MiniPlayer v-if="store.view !== 'nowplaying'" />

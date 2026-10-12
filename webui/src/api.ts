@@ -5,20 +5,34 @@ export const token =
 if (token) sessionStorage.setItem("cliamp-token", token);
 if (location.search) history.replaceState(null, "", location.pathname);
 
+export class HttpError extends Error {
+  status: number = 0;
+  detail: string = "";
+}
+
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   const r = await fetch(path, {
     ...init,
     headers: { ...(init.headers || {}), "X-Token": token },
   });
   if (!r.ok) {
-    throw Object.assign(new Error("http " + r.status), {
-      status: r.status,
-      body: await r.json().catch(() => ({})),
-    });
+    const raw = await r.text();
+    let detail = "";
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null && "detail" in parsed) {
+        detail = String(parsed.detail);
+      }
+    } catch {
+      /* non-JSON error body: detail stays empty */
+    }
+    const err = new HttpError(`http ${r.status}`);
+    err.status = r.status;
+    err.detail = detail;
+    throw err;
   }
   return r.json();
 }
-
 export interface Track {
   path: string;
   title?: string;
@@ -69,23 +83,21 @@ export interface ProviderInfo {
   browse_artists?: boolean;
 }
 
-export interface ListItem {
-  id: string;
-  name: string;
-  provider?: string;
-  track_count?: number;
-  album_count?: number;
+// one permissive row shape for every browse result (playlists/albums/artists/
+// catalog/search tracks share it; each tab reads its own subset).
+export interface BrowseRow {
+  id?: string;
+  name?: string;
+  title?: string;
   artist?: string;
   artist_id?: string;
+  provider?: string;
   year?: number;
   genre?: string;
+  track_count?: number;
+  album_count?: number;
   favoritable?: boolean;
-}
-
-export interface FoundTrack {
-  title: string;
-  artist?: string;
-  path: string;
+  path?: string;
   duration_secs?: number;
   stream?: boolean;
 }
@@ -93,10 +105,10 @@ export interface FoundTrack {
 export interface ListReply {
   ok: boolean;
   total?: number;
-  playlists?: ListItem[];
-  albums?: ListItem[];
-  artists?: ListItem[];
-  tracks?: FoundTrack[];
+  playlists?: BrowseRow[];
+  albums?: BrowseRow[];
+  artists?: BrowseRow[];
+  tracks?: BrowseRow[];
 }
 
 export const getProviders = () =>
