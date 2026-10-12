@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import NowPlaying from "./components/NowPlaying.vue";
+import MiniPlayer from "./components/MiniPlayer.vue";
+import NowPlayingHero from "./components/NowPlayingHero.vue";
 import PlayNextList from "./components/PlayNextList.vue";
 import QueueList from "./components/QueueList.vue";
 import StatusPill from "./components/StatusPill.vue";
 import Toasts from "./components/Toasts.vue";
-import TransportBar from "./components/TransportBar.vue";
-import MiniPlayer from "./components/MiniPlayer.vue";
 import { store, setView } from "./store";
 </script>
 
@@ -21,8 +20,7 @@ import { store, setView } from "./store";
     </p>
 
     <template v-if="store.view === 'nowplaying'">
-      <NowPlaying />
-      <TransportBar />
+      <NowPlayingHero />
     </template>
     <template v-else-if="store.view === 'queue'">
       <PlayNextList />
