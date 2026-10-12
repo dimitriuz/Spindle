@@ -17,6 +17,19 @@ export const store = reactive({
     count: 0,
   } as api.Queue,
   caps: new Set<string>(),
+  view: "nowplaying" as "nowplaying" | "queue" | "browse",
+  browse: {
+    providers: [] as api.ProviderInfo[],
+    provider: "",
+    tab: "",
+    list: [] as (api.ListItem | api.FoundTrack)[],
+    total: -1,
+    offset: 0,
+    loading: false,
+    error: "",
+    query: "",
+    stack: [] as Drill[],
+  },
   notices: [] as Notice[],
 });
 
@@ -95,4 +108,16 @@ export function connectEvents(): EventSource {
       notify(store.online ? "player online" : "player offline");
   });
   return es;
+}
+
+export interface Drill {
+  kind: "album" | "artist";
+  id: string;
+  title: string;
+}
+
+export function setView(
+  v: "nowplaying" | "queue" | "browse",
+) {
+  store.view = v;
 }

@@ -59,3 +59,76 @@ export function command(op: string, params: Record<string, unknown> = {}) {
     body: JSON.stringify({ op, params }),
   });
 }
+
+export interface ProviderInfo {
+  key: string;
+  name: string;
+  searchable?: boolean;
+  catalog?: boolean;
+  browse_albums?: boolean;
+  browse_artists?: boolean;
+}
+
+export interface ListItem {
+  id: string;
+  name: string;
+  provider?: string;
+  track_count?: number;
+  album_count?: number;
+  artist?: string;
+  artist_id?: string;
+  year?: number;
+  genre?: string;
+  favoritable?: boolean;
+}
+
+export interface FoundTrack {
+  title: string;
+  artist?: string;
+  path: string;
+  duration_secs?: number;
+  stream?: boolean;
+}
+
+export interface ListReply {
+  ok: boolean;
+  total?: number;
+  playlists?: ListItem[];
+  albums?: ListItem[];
+  artists?: ListItem[];
+  tracks?: FoundTrack[];
+}
+
+export const getProviders = () =>
+  req<ListReply & { providers: ProviderInfo[] }>("/api/library/providers");
+
+export const libraryList = (
+  provider: string,
+  kind: "playlists" | "albums" | "artists" | "catalog",
+  offset = 0,
+  limit = 50,
+) =>
+  req<ListReply>(
+    `/api/library/${encodeURIComponent(provider)}/${kind}?offset=${offset}&limit=${limit}`,
+  );
+
+export const libraryTracks = (
+  provider: string,
+  detail: "album" | "artist",
+  id: string,
+  offset = 0,
+  limit = 50,
+) =>
+  req<ListReply>(
+    `/api/library/${encodeURIComponent(provider)}/${detail}/${encodeURIComponent(id)}/tracks?offset=${offset}&limit=${limit}`,
+  );
+
+export const searchProvider = (
+  provider: string,
+  q: string,
+  offset = 0,
+  limit = 50,
+) =>
+  req<ListReply>(
+    `/api/search/${encodeURIComponent(provider)}?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}`,
+  );
