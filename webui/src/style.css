@@ -40,7 +40,7 @@ body {
   padding-bottom: 0.5rem;
 }
 
-.brand {
+a.brand, .brand {
   color: var(--accent);
   letter-spacing: 0.2em;
   text-transform: uppercase;

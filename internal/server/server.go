@@ -19,8 +19,10 @@ type Config struct {
 	Guard   *HostGuard
 	Limiter *Limiter
 	Static  fs.FS
-	Logger  *slog.Logger
-
+	// Next is the parallel "next" UI (webui2), served under /next/ beside
+	// the Vue app; nil disables the route.
+	Next   fs.FS
+	Logger *slog.Logger
 	// LibraryTTL bounds library listing cache freshness (0 ⇒ 60 s).
 	LibraryTTL time.Duration
 	// LibraryTimeout caps one provider job wait (0 ⇒ 30 s).
@@ -75,6 +77,9 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))
+	if cfg.Next != nil {
+		mux.Handle("GET /next/", s.nextHandler())
+	}
 	mux.Handle("/", s.staticHandler())
 	return mux
 }
@@ -100,4 +105,23 @@ func (s *serverState) staticHandler() http.Handler {
 		f.Close()
 		files.ServeHTTP(w, r)
 	})
+}
+
+// nextHandler serves the embedded "next" UI under /next/ without a token,
+// same rule as staticHandler: assets carry no player state. Unknown paths
+// fall back to the page. The page keeps the request path (serveFile
+// redirects any path ending in /index.html to "./").
+func (s *serverState) nextHandler() http.Handler {
+	return http.StripPrefix("/next", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if name != "" {
+			if f, err := s.cfg.Next.Open(name); err == nil {
+				f.Close()
+				http.ServeFileFS(w, r, s.cfg.Next, name)
+				return
+			}
+		}
+		r.URL.Path = "/"
+		http.ServeFileFS(w, r, s.cfg.Next, "index.html")
+	}))
 }

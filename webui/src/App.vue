@@ -12,7 +12,7 @@ import { store, setView } from "./store";
 <template>
   <main class="wrap">
     <header class="bar">
-      <span class="brand">cliamp</span>
+    <a class="brand" href="/next/" title="the new interface">cliamp</a>
       <StatusPill />
     </header>
 
