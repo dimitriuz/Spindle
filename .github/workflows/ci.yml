@@ -16,3 +16,4 @@ jobs:
         with: { node-version: 22 }
       - run: npm ci && npm run build
         working-directory: webui
+      - run: node webui2/app_test.js

@@ -43,6 +43,16 @@ Listings refresh on a bounded TTL (60 s default); a provider outage shows an
 inline retry banner that keeps the rows already on screen.
 
 
+## The “next” UI (`/next/`)
+
+The same backend wears a second face at `/next/`: Now Playing with a
+drag-seek bar, Queue + Play-next management, provider Browse with paged
+drill-down, per-provider Search and a synced lyrics sheet. It is a port of
+the MiSTer Subsonic web remote — three embedded vanilla-JS files, no build
+step — running beside the Vue app; each one links to the other
+(“classic UI” ⇄ the `cliamp` brand).
+
+
 ## Install
 
 1. `cliamp plugins install <user>/cliamp-plugin-web`
