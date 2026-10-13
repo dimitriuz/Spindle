@@ -5,12 +5,11 @@ pkgrel=1
 pkgdesc="LAN web remote bridge for cliamp"
 arch=(x86_64 aarch64)
 license=(MIT)
-makedepends=(go nodejs npm)
+makedepends=(go)
 source=("git+https://github.com/<user>/cliamp-plugin-web#tag=v$pkgver")
 sha256sums=("SKIP")
 build() {
   cd cliamp-plugin-web
-  make ui
   make build
 }
 package() {
