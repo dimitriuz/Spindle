@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -21,7 +20,6 @@ import (
 	"cliamp-web/internal/server"
 	"cliamp-web/internal/snapshot"
 	"cliamp-web/webui"
-	"cliamp-web/webui2"
 )
 
 type runConfig struct {
@@ -107,14 +105,11 @@ func run(ctx context.Context, rc runConfig) error {
 		})
 	go sub.Run(ctx)
 
-	static, err := fs.Sub(webui.Dist, "dist")
-	if err != nil {
-		return err
-	}
+
 	h := server.New(server.Config{
 		Cache: cache, Runner: conn, Hub: hub,
 		Auth: server.NewAuth(tok), Guard: server.NewHostGuard(rc.AllowedHosts),
-		Limiter: server.NewLimiter(20, 40, time.Now), Static: static, Next: webui2.FS(), Logger: logger,
+		Limiter: server.NewLimiter(20, 40, time.Now), UI: webui.FS(), Logger: logger,
 	})
 
 	if err := writeStatus(rc.DataDir, tok, rc.Port, rc.Bind); err != nil {

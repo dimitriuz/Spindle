@@ -26,31 +26,30 @@ and play-next editing), v2 adds choosing music itself:
 - **Act on results**: play now (▶) / queue next (+) on any track row; load a
   playlist or an album into the queue behind a confirm — those ops replace the
   queue, so the confirm is the guard.
-- **Now Playing** full-screen page: typographic hero, full-width scrubber,
-  large transport/volume/shuffle/repeat controls, "Up next" tap-to-play; the
-  `Now Playing · Queue · Browse` tab shell keeps a mini player on the other
-  views.
+- **Now Playing**: big round transport, drag-seek bar, volume in dB,
+  shuffle/repeat; the `Now Playing · Queue · Browse · Search` tab shell is
+  pinned to the bottom; Queue also manages the Play-next list (remove, move).
 - Tap a playlist to page through its real tracks; ▶ plays any one,
   “play playlist” (confirm) replaces the queue
 - Radio stations start on tap (confirm) — no load buttons anywhere
 - Lyrics sheet on the Now Playing page, current line follows the track,
   tap a line to jump there
-- The tab bar and mini-player stay pinned; rows read “title · artist”
-  with ellipsis; the live connection reconnects by itself (lid close,
-  bridge restart, iOS sleep)
+- The tab bar stays pinned; rows truncate with ellipsis and a muted second
+  line; the live connection reconnects by itself (lid close, bridge restart,
+  iOS sleep)
 
 Listings refresh on a bounded TTL (60 s default); a provider outage shows an
 inline retry banner that keeps the rows already on screen.
 
 
-## The “next” UI (`/next/`)
+## The interface
 
-The same backend wears a second face at `/next/`: Now Playing with a
-drag-seek bar, Queue + Play-next management, provider Browse with paged
-drill-down, per-provider Search and a synced lyrics sheet. It is a port of
-the MiSTer Subsonic web remote — three embedded vanilla-JS files, no build
-step — running beside the Vue app; each one links to the other
-(“classic UI” ⇄ the `cliamp` brand).
+The page is served at `/` from three embedded vanilla-JS files (`webui/`:
+`index.html`, `app.css`, `app.js`) — no build step, no framework — ported
+from the MiSTer Subsonic web remote. Its pure core is node-tested:
+`node webui/app_test.js` (part of `make test`). The earlier Vue app is
+frozen under `archive/webui-vue` and no longer served; new features land in
+the vanilla page only.
 
 
 ## Install
@@ -135,17 +134,13 @@ allowed_hosts = "cliamp.example.lan"
 ## Development
 
 ```sh
-make ui      # npm ci + vite build → webui/dist (committed, go:embed)
-make build   # dist/cliamp-web (embeds webui/dist)
-make test    # go vet + go test
+make build   # dist/cliamp-web — embeds webui/ (go:embed, no JS toolchain)
+make test    # go vet + go test + node webui/app_test.js
 ```
 
-Update the installed dev binary: `make build && cp dist/cliamp-web ~/.local/bin/cliamp-web`.
-
-
-Hot-reload the UI during development: `cliamp-web serve` on one terminal,
-`cd webui && npm run dev` on another, then open
-`http://localhost:5173/?token=<token>` — Vite proxies `/api` to `:8730`.
+Editing the UI means editing `webui/*.{html,css,js}` and rebuilding the
+binary; hard-reload the phone page afterwards. Update the installed dev
+binary: `make build && cp dist/cliamp-web ~/.local/bin/cliamp-web`.
 
 ## License
 

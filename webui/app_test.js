@@ -1,5 +1,5 @@
 'use strict';
-// Node tests for the pure half of app.js: run with `node webui2/app_test.js`.
+// Node tests for the pure half of app.js: run with `node webui/app_test.js`.
 const assert = require('node:assert');
 const A = require('./app.js');
 

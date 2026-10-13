@@ -7,10 +7,10 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"cliamp-web/webui2"
+	"cliamp-web/webui"
 )
 
-func fakeNext() fstest.MapFS {
+func fakeUI() fstest.MapFS {
 	return fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte(`<!doctype html><body><div id="player"></div>`)},
 		"app.css":    &fstest.MapFile{Data: []byte(`:root{--bg:#000}`)},
@@ -18,61 +18,71 @@ func fakeNext() fstest.MapFS {
 	}
 }
 
-func nextGet(h http.Handler, path string) *httptest.ResponseRecorder {
+func uiGet(h http.Handler, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
 	return rec
 }
 
-// The next UI lives beside the Vue app and needs no token, same rule as the
-// static SPA assets.
-func TestNextServesWithoutToken(t *testing.T) {
+// The UI lives at the root and needs no token: only /api/* carries player
+// state and guards on it.
+func TestUIServesAtRootWithoutToken(t *testing.T) {
 	cfg := authedConfig(t)
-	cfg.Next = fakeNext()
+	cfg.UI = fakeUI()
 	h := New(cfg)
 
-	rec := nextGet(h, "/next/")
+	rec := uiGet(h, "/")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `id="player"`) {
 		t.Fatalf("page: %d %s", rec.Code, rec.Body)
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
 		t.Fatalf("page content type: %s", ct)
 	}
-	rec = nextGet(h, "/next/app.css")
+	rec = uiGet(h, "/app.css")
 	if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/css") {
 		t.Fatalf("css: %d %s", rec.Code, rec.Header().Get("Content-Type"))
 	}
-	rec = nextGet(h, "/next/app.js")
+	rec = uiGet(h, "/app.js")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "use strict") {
 		t.Fatalf("js: %d", rec.Code)
 	}
-	rec = nextGet(h, "/next/nope")
+	rec = uiGet(h, "/some/unknown/route")
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `id="player"`) {
 		t.Fatalf("unknown path must fall back to the page: %d", rec.Code)
 	}
-	rec = nextGet(h, "/next")
-	if rec.Code != http.StatusTemporaryRedirect || rec.Header().Get("Location") != "/next/" {
-		t.Fatalf("bare /next: %d %q", rec.Code, rec.Header().Get("Location"))
+	// the old /next/ bookmark must land on the root page
+	rec = uiGet(h, "/next/")
+	if rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "/" {
+		t.Fatalf("old /next/: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
-	rec = nextGet(h, "/")
-	if rec.Code == 200 && strings.Contains(rec.Body.String(), `id="player"`) {
-		t.Fatal("root served the next page")
+	// data endpoints still guard
+	rec = uiGet(h, "/api/state")
+	if rec.Code != 401 {
+		t.Fatalf("api must still demand the token: %d", rec.Code)
 	}
 }
 
-// The real embedded webui2 files must satisfy what the page references.
-func TestNextEmbeddedPageWired(t *testing.T) {
+// The real embedded files must satisfy what the page references.
+func TestUIEmbeddedPageWired(t *testing.T) {
 	cfg := authedConfig(t)
-	cfg.Next = webui2.FS()
+	cfg.UI = webui.FS()
 	h := New(cfg)
-	rec := nextGet(h, "/next/")
+	rec := uiGet(h, "/")
 	body := rec.Body.String()
 	if rec.Code != 200 || !strings.Contains(body, `href="app.css"`) || !strings.Contains(body, `src="app.js"`) {
 		t.Fatalf("embedded page: %d", rec.Code)
 	}
-	for _, f := range []string{"/next/app.css", "/next/app.js"} {
-		if rec := nextGet(h, f); rec.Code != 200 || rec.Body.Len() == 0 {
+	for _, f := range []string{"/app.css", "/app.js"} {
+		if rec := uiGet(h, f); rec.Code != 200 || rec.Body.Len() == 0 {
 			t.Fatalf("%s: %d len=%d", f, rec.Code, rec.Body.Len())
 		}
+	}
+}
+
+// Without a UI configured, root is 404 — but never a token wall.
+func TestUINilIsPlain404(t *testing.T) {
+	h := New(authedConfig(t))
+	if rec := uiGet(h, "/"); rec.Code != 404 {
+		t.Fatalf("nil UI: %d", rec.Code)
 	}
 }

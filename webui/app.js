@@ -1,8 +1,8 @@
 'use strict';
-// The "next" cliamp-web page, ported from the MiSTer Subsonic web remote:
-// same shape (pure testable core, one EventSource with backoff and a
-// watchdog, hash routing, imperative rows). The data layer is the cliamp
-// bridge: snapshot state, {op, params} commands, library lists.
+// The cliamp-web page, ported from the MiSTer Subsonic web remote: same
+// shape (pure testable core, one EventSource with backoff and a watchdog,
+// hash routing, imperative rows). The data layer is the cliamp bridge:
+// snapshot state, {op, params} commands, library lists.
 
 // ---- token ----
 const token =

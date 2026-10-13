@@ -1,9 +1,17 @@
-// Package webui exists only so the embedded single-page app can be reached
-// from cmd/cliamp-web: go:embed paths are relative to the source file, and
-// the Vue build output lives in webui/dist.
 package webui
 
-import "embed"
+// The web interface: three embedded files, no build step. app_test.js sits
+// beside them but is not embedded. This is the vanilla port of the MiSTer
+// Subsonic remote; the earlier Vue app lives in archive/webui-vue (frozen —
+// new features land here only).
 
-//go:embed dist
-var Dist embed.FS
+import (
+	"embed"
+	"io/fs"
+)
+
+//go:embed index.html app.js app.css
+var webFS embed.FS
+
+// FS returns the embedded page rooted at index.html.
+func FS() fs.FS { return webFS }

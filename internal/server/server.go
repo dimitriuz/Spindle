@@ -18,10 +18,9 @@ type Config struct {
 	Auth    *Auth
 	Guard   *HostGuard
 	Limiter *Limiter
-	Static  fs.FS
-	// Next is the parallel "next" UI (webui2), served under /next/ beside
-	// the Vue app; nil disables the route.
-	Next   fs.FS
+	// UI is the embedded web interface (webui: index.html, app.css, app.js),
+	// served at the root without a token; nil disables it.
+	UI     fs.FS
 	Logger *slog.Logger
 	// LibraryTTL bounds library listing cache freshness (0 ⇒ 60 s).
 	LibraryTTL time.Duration
@@ -77,51 +76,31 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))
-	if cfg.Next != nil {
-		mux.Handle("GET /next/", s.nextHandler())
+	if cfg.UI != nil {
+		mux.Handle("GET /next/", http.RedirectHandler("/", http.StatusMovedPermanently)) // old bookmark
 	}
-	mux.Handle("/", s.staticHandler())
+	mux.Handle("/", s.uiHandler())
 	return mux
 }
 
-// staticHandler serves the embedded SPA without a token: assets carry no
-// player state; only /api/* is guarded. Unknown non-API paths fall back to
-// index.html so client-side routes survive reloads.
-func (s *serverState) staticHandler() http.Handler {
-	if s.cfg.Static == nil {
+// uiHandler serves the embedded interface without a token: assets carry no
+// player state; only /api/* is guarded. Unknown paths fall back to the page
+// so hash routes survive reloads. The page is served as "/" because
+// serveFile redirects any request path ending in /index.html to "./".
+func (s *serverState) uiHandler() http.Handler {
+	if s.cfg.UI == nil {
 		return http.NotFoundHandler()
 	}
-	files := http.FileServer(http.FS(s.cfg.Static))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		if path == "/" {
-			path = "/index.html"
-		}
-		f, err := s.cfg.Static.Open(strings.TrimPrefix(path, "/"))
-		if err != nil {
-			http.ServeFileFS(w, r, s.cfg.Static, "index.html")
-			return
-		}
-		f.Close()
-		files.ServeHTTP(w, r)
-	})
-}
-
-// nextHandler serves the embedded "next" UI under /next/ without a token,
-// same rule as staticHandler: assets carry no player state. Unknown paths
-// fall back to the page. The page keeps the request path (serveFile
-// redirects any path ending in /index.html to "./").
-func (s *serverState) nextHandler() http.Handler {
-	return http.StripPrefix("/next", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimPrefix(r.URL.Path, "/")
 		if name != "" {
-			if f, err := s.cfg.Next.Open(name); err == nil {
+			if f, err := s.cfg.UI.Open(name); err == nil {
 				f.Close()
-				http.ServeFileFS(w, r, s.cfg.Next, name)
+				http.ServeFileFS(w, r, s.cfg.UI, name)
 				return
 			}
 		}
 		r.URL.Path = "/"
-		http.ServeFileFS(w, r, s.cfg.Next, "index.html")
-	}))
+		http.ServeFileFS(w, r, s.cfg.UI, "index.html")
+	})
 }
