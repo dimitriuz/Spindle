@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"cliamp-web/internal/ipc"
@@ -72,6 +73,10 @@ func (s *serverState) command(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": "operation not allowed: " + req.Op, "code": "forbidden_operation"})
 		return
 	}
+	if !settingsParamsOK(req.Op, req.Params) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
 	// the browser only ever sees scrubbed stream URLs; cliamp needs the real one
 	switch t := req.Params["track"].(type) {
 	case map[string]any: // the shape cliamp wants: a track object
@@ -119,6 +124,41 @@ var allowedOps = map[string]bool{
 	"queue.play": true, "queue.remove": true, "queue.clear": true, "queue.move": true,
 	"playnext.remove": true, "playnext.move": true,
 	"provider.load": true, "provider.load_album": true,
+	// Settings page: output device, EQ, mono, speed (theme and vis are not offered by cliamp's v2 API)
+	"device": true, "eq": true, "mono": true, "speed": true,
+}
+
+// settingsParamsOK checks the parameters of the settings operations: a short
+// name, an EQ band 0-9, and numbers within what cliamp accepts. Anything else
+// is refused before it reaches the player.
+func settingsParamsOK(op string, p map[string]any) bool {
+	switch op {
+	case "device", "eq", "mono", "speed":
+	default:
+		return true
+	}
+	for k, v := range p {
+		switch k {
+		case "name":
+			n, ok := v.(string)
+			if !ok || len(n) > 200 || strings.ContainsAny(n, "\x00\n\r") {
+				return false
+			}
+		case "band":
+			f, ok := v.(float64)
+			if !ok || f < 0 || f > 9 || f != float64(int(f)) {
+				return false
+			}
+		case "value":
+			f, ok := v.(float64)
+			if !ok || (op == "eq" && (f < -12 || f > 12)) || (op == "speed" && (f < 0.25 || f > 2)) || (op != "eq" && op != "speed") {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func statusForCode(code string) int {

@@ -17,14 +17,14 @@ svg { width: 24px; height: 24px; fill: currentColor; flex: none; }
 
 /* Views: one at a time on a phone. */
 .view { display: none; padding: 16px 16px calc(var(--tabs) + 24px + env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; }
-body[data-tab=now] #now, body[data-tab=queue] #queue, body[data-tab=favorites] #favorites, body[data-tab=browse] #browse, body[data-tab=search] #search { display: block; }
+body[data-tab=now] #now, body[data-tab=queue] #queue, body[data-tab=favorites] #favorites, body[data-tab=browse] #browse, body[data-tab=search] #search, body[data-tab=settings] #settings { display: block; }
 
 #tabs { position: fixed; left: 0; right: 0; bottom: 0; display: flex; background: var(--panel); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
 #tabs a { flex: 1; min-height: var(--tabs); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; color: var(--dim); }
 #tabs i { display: block; height: 24px; }
 body[data-tab=now] #tabs [data-tab=now], body[data-tab=queue] #tabs [data-tab=queue], body[data-tab=favorites] #tabs [data-tab=favorites],
-body[data-tab=browse] #tabs [data-tab=browse], body[data-tab=search] #tabs [data-tab=search] { color: var(--accent); }
+body[data-tab=browse] #tabs [data-tab=browse], body[data-tab=search] #tabs [data-tab=search], body[data-tab=settings] #tabs [data-tab=settings] { color: var(--accent); }
 
 #banner { position: fixed; top: 0; left: 0; right: 0; z-index: 20; background: var(--error); color: #fff; text-align: center; padding: 8px; font-weight: 600; }
 #now { position: relative; }
@@ -325,3 +325,33 @@ li.played .t1, li.played .t2, li.played .end { color: var(--dim); opacity: .55; 
 .vq::placeholder { color: var(--dim); }
 .vq:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .vsel option { background: var(--panel); color: var(--text); }
+
+/* Settings */
+.scard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 0 0 14px; }
+.scard h3 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+.srow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.scard h3 + .srow, .scard h3 + .eq { border-top: 0; }
+.slabel { min-width: 0; flex: 1 1 160px; }
+.ssub { font-size: 12px; overflow-wrap: anywhere; }
+.snote { font-size: 12px; margin: 8px 0 0; }
+.ok { color: #4cd48a; } .bad { color: var(--error); }
+.radios { display: flex; flex-direction: column; gap: 6px; }
+.radio { display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: none; color: var(--text); min-height: 56px; }
+.radio[aria-checked=true] { border-color: var(--accent); background: rgba(79, 195, 247, .08); }
+.radio .dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--dim); flex: none; }
+.radio[aria-checked=true] .dot { border-color: var(--accent); background: radial-gradient(var(--accent) 45%, transparent 50%); }
+.radio .rtext { display: flex; flex-direction: column; min-width: 0; }
+.radio:disabled { opacity: .6; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid var(--line); background: none; color: var(--text); font: inherit; font-size: 14px; }
+.chip[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #06232f; }
+.switch { width: 50px; height: 30px; border-radius: 15px; border: 0; background: var(--art); position: relative; flex: none; }
+.switch span { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--text); transition: transform .18s; }
+.switch[aria-checked=true] { background: var(--accent); }
+.switch[aria-checked=true] span { transform: translateX(20px); background: #06232f; }
+.eq { display: flex; justify-content: space-between; gap: 2px; padding: 12px 0 8px; }
+.eqband { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.eqband input[type=range] { writing-mode: vertical-lr; direction: rtl; -webkit-appearance: slider-vertical; appearance: auto; width: 28px; height: 130px; flex: none; }
+.eqv { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--dim); }
+.eqf { font-size: 10px; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .switch span { transition: none; } }

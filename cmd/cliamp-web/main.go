@@ -165,6 +165,7 @@ func run(ctx context.Context, rc runConfig) error {
 	var stationArtSrc server.StationArtSource
 	var stationMetaSrc server.StationMetaSource
 	var artRes *art.Resolver
+	var hasNavidrome bool
 	var infoSrc server.InfoSource
 	if res, err := art.NewResolver(art.Options{
 		Dir: filepath.Join(rc.DataDir, "art"), MaxBytes: artCacheBytes,
@@ -176,6 +177,7 @@ func run(ctx context.Context, rc runConfig) error {
 		// covers for albums, artists and playlists need the login cliamp already has
 		if nd, ok := art.NavidromeFromConfig(configDir()); ok {
 			res.SetNavidrome(nd)
+			hasNavidrome = true
 		} else {
 			logger.Info("no [navidrome] login in cliamp's config: list covers stay placeholders")
 		}
@@ -207,7 +209,17 @@ func run(ctx context.Context, rc runConfig) error {
 		favSrc = fs
 	}
 
-	h := server.New(server.Config{
+	about := func() server.AboutInfo {
+		ai := server.AboutInfo{Listen: net.JoinHostPort(rc.Bind, strconv.Itoa(rc.Port)), LAN: rc.Bind != "127.0.0.1" && rc.Bind != "localhost" && rc.Bind != "::1", Navidrome: hasNavidrome}
+		if filesSrc != nil {
+			ai.MusicRoot = filesSrc.RootName()
+		}
+		if artRes != nil {
+			ai.ArtCacheBytes, ai.ArtCacheMax = artRes.CacheStats()
+		}
+		return ai
+	}
+	h := server.New(server.Config{About: about,
 		Cache: cache, Runner: conn, Hub: hub, Art: artSrc, Info: infoSrc, Favorites: favSrc, Enqueue: enq, Files: filesSrc, ItemArt: itemArtSrc, FolderArt: folderArtSrc, StationArt: stationArtSrc, StationMeta: stationMetaSrc,
 		Guard:   server.NewHostGuard(rc.AllowedHosts),
 		Limiter: server.NewLimiter(20, 40, time.Now), UI: webui.FS(), Logger: logger,

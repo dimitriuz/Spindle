@@ -295,6 +295,21 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.ok(al.sorts.some((x) => x.id === 'new' && /year/i.test(x.label)), 'albums sort by release year');
     assert.ok(A.ALBUM_ORDERS.every(([v]) => /^[A-Za-z]*$/.test(v)), 'orders are plain words the bridge accepts');
   });
+  await ok('settings helpers', () => {
+    assert.equal(A.deviceLabel('alsa_output.usb-Topping_E30-00.HiFi__Headphones__sink'), 'Topping E30 · HiFi Headphones');
+    assert.equal(A.deviceLabel('alsa_output.platform-snd_aloop.0.analog-stereo'), 'snd aloop · 0 · analog stereo');
+    assert.equal(A.deviceLabel(''), '');
+    assert.equal(A.deviceLabel('default'), 'default');
+    assert.equal(A.EQ_FREQS.length, 10);
+    assert.ok(A.EQ_PRESETS.includes('Flat') && A.EQ_PRESETS.length === 16);
+    assert.equal(A.speedLabel(1.25), '1.25×');
+    assert.equal(A.fmtBytes(62411921), '59.5 MB');
+    assert.equal(A.fmtBytes(512), '512 B');
+    assert.equal(A.fmtUptime(45), '45 s');
+    assert.equal(A.fmtUptime(3700), '1 h 1 min');
+    assert.equal(A.fmtUptime(200000), '2 d 7 h');
+    assert.deepEqual(A.parseHash('#settings'), { tab: 'settings', rest: '' });
+  });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
     assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);

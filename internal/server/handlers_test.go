@@ -254,3 +254,65 @@ func TestStreamCredentialsNeverReachTheBrowser(t *testing.T) {
 }
 
 func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }
+
+func TestSettingsOpsAreAllowedWithCheckedParams(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true}`)}}
+	h := New(commandConfig(t, fr))
+	for _, ok := range []string{
+		`{"op":"device","params":{"name":"list"}}`, `{"op":"device","params":{"name":"alsa_output.usb-Topping_E30"}}`,
+		`{"op":"eq","params":{"name":"Rock"}}`, `{"op":"eq","params":{"band":3,"value":-4.5}}`,
+		`{"op":"mono","params":{"name":"on"}}`, `{"op":"speed","params":{"value":1.25}}`,
+	} {
+		if rec := postCommand(h, ok); rec.Code != 200 {
+			t.Errorf("%s: %d %s", ok, rec.Code, rec.Body)
+		}
+	}
+	for _, bad := range []string{
+		`{"op":"eq","params":{"band":10,"value":1}}`, `{"op":"eq","params":{"band":-1,"value":1}}`, `{"op":"eq","params":{"band":1.5,"value":1}}`,
+		`{"op":"eq","params":{"band":1,"value":99}}`, `{"op":"speed","params":{"value":5}}`, `{"op":"speed","params":{"value":0}}`,
+		`{"op":"device","params":{"name":123}}`, `{"op":"device","params":{"name":"` + strings.Repeat("a", 201) + `"}}`,
+		`{"op":"device","params":{"name":"a\nb"}}`, `{"op":"mono","params":{"path":"/etc/passwd"}}`, `{"op":"mono","params":{"value":1}}`,
+	} {
+		before := fr.calls
+		if rec := postCommand(h, bad); rec.Code != 400 || fr.calls != before {
+			t.Errorf("%s: %d (player called: %v)", bad, rec.Code, fr.calls != before)
+		}
+	}
+}
+
+func TestThemeAndVisAreNotOffered(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded"}}
+	h := New(commandConfig(t, fr))
+	for _, op := range []string{"theme", "vis"} {
+		if rec := postCommand(h, `{"op":"`+op+`","params":{"name":"list"}}`); rec.Code != 403 || fr.calls != 0 {
+			t.Fatalf("%s: %d", op, rec.Code)
+		}
+	}
+}
+
+func TestAboutReportsBridgeStateWithoutPathsOrLogins(t *testing.T) {
+	cfg := guardedConfig(t)
+	cfg.Hub = NewHub()
+	cfg.About = func() AboutInfo {
+		return AboutInfo{Listen: "0.0.0.0:8730", LAN: true, Navidrome: true, MusicRoot: "music", ArtCacheBytes: 1234, ArtCacheMax: 5678}
+	}
+	_, _ = cfg.Hub.Subscribe()
+	rec := artGet(New(cfg), "/api/about", nil)
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := got["bridge"].(map[string]any)
+	if got["name"] != "cliamp-web" || got["clients"] != float64(1) || b["listen"] != "0.0.0.0:8730" || b["art_cache_bytes"] != float64(1234) || b["navidrome"] != true {
+		t.Fatalf("%v", got)
+	}
+	if _, ok := got["player"].(map[string]any)["online"]; !ok {
+		t.Fatalf("player state missing: %v", got)
+	}
+	if strings.Contains(rec.Body.String(), "/home/") || strings.Contains(rec.Body.String(), "password") {
+		t.Fatalf("leaks: %s", rec.Body)
+	}
+}

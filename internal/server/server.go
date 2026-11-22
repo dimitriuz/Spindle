@@ -39,6 +39,8 @@ type Config struct {
 	// served at the root; nil disables it.
 	UI     fs.FS
 	Logger *slog.Logger
+	// About describes this bridge for /api/about (address, features, cache).
+	About AboutSource
 	// LibraryTTL bounds library listing cache freshness (0 ⇒ 60 s).
 	LibraryTTL time.Duration
 	// LibraryTimeout caps one provider job wait (0 ⇒ 30 s).
@@ -66,7 +68,10 @@ func (c *Config) heartbeat() time.Duration {
 	return c.HeartbeatInterval
 }
 
-type serverState struct{ cfg Config }
+type serverState struct {
+	cfg     Config
+	started time.Time
+}
 
 // New assembles the HTTP handler. The request guard (protect) wraps every
 // data endpoint; /api/health is open by design.
@@ -77,11 +82,12 @@ func New(cfg Config) http.Handler {
 	cfg.listCache = newTTLCache(cfg.LibraryTTL, 128, time.Now)
 	cfg.providersCache = newTTLCache(providersTTL, 4, time.Now)
 	cfg.noCache = newTTLCache(0, 1, time.Now)
-	s := &serverState{cfg: cfg}
+	s := &serverState{cfg: cfg, started: time.Now()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.Handle("GET /api/state", s.protect(http.HandlerFunc(s.state)))
 	mux.Handle("GET /api/queue", s.protect(http.HandlerFunc(s.queue)))
+	mux.Handle("GET /api/about", s.protect(http.HandlerFunc(s.about)))
 	mux.Handle("GET /api/capabilities", s.protect(http.HandlerFunc(s.capabilities)))
 	mux.Handle("GET /api/events", s.protect(http.HandlerFunc(s.events)))
 	mux.Handle("POST /api/command", s.protect(http.HandlerFunc(s.command)))

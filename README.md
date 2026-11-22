@@ -283,3 +283,12 @@ binary: `make build && cp dist/cliamp-web ~/.local/bin/cliamp-web`.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+### Settings
+
+The **Settings** tab shows and changes: the audio output device (cliamp's `device` operation), the
+equalizer (preset or ten bands), mono and playback speed; the library (providers, Navidrome covers,
+music folder, radio directory); about information (bridge version, address, uptime, connected browsers,
+cliamp status and API, picture cache size); and choices that live in this browser only (default tile or
+list view, how soon fullscreen controls hide, reset of saved sort and view choices). cliamp's `theme`
+and `vis` operations are not offered by its v2 API, so the terminal theme and visualizer are not here.

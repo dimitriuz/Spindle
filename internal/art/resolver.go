@@ -213,3 +213,6 @@ func (r *Resolver) StationArtByID(ctx context.Context, id string) (*Image, error
 	defer cancel()
 	return r.cache.Do("station:id:"+hashKey(id), func() ([]byte, error) { return r.st.Image(ctx, logo) })
 }
+
+// CacheStats is the picture cache's size and cap in bytes.
+func (r *Resolver) CacheStats() (used, max int64) { return r.cache.Stats() }

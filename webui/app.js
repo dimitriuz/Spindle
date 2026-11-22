@@ -167,6 +167,30 @@ function viewRows(all, view, sorts, facets) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// ---- settings ----
+// deviceLabel: a readable name for a PulseAudio/PipeWire sink such as
+// "alsa_output.usb-Topping_E30-00.HiFi__Headphones__sink" -> "Topping E30 · HiFi Headphones"
+function deviceLabel(name) {
+  let n = String(name || '').replace(/^alsa_output\./, '').replace(/^alsa_card\./, '');
+  const parts = n.split('.');
+  const cut = (x) => x.replace(/^(usb|pci|platform)-/, '').replace(/-\d+$/, '').replace(/__+/g, ' ').replace(/[_-]+/g, ' ').replace(/\bsink\b/i, '').replace(/\s+/g, ' ').trim();
+  const out = parts.map(cut).filter(Boolean);
+  return out.length ? out.join(' · ') : String(name || '');
+}
+const EQ_FREQS = ['70', '180', '320', '600', '1k', '3k', '6k', '12k', '14k', '16k']; // Hz
+const EQ_PRESETS = ['Flat', 'Rock', 'Pop', 'Jazz', 'Classical', 'Bass Boost', 'Treble Boost', 'Vocal', 'Electronic', 'Acoustic', 'Hip-Hop', 'R&B', 'Loudness', 'Late Night', 'Podcast', 'Small Speakers'];
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const speedLabel = (v) => (Number(v) || 1) + '×';
+const fmtBytes = (n) => { n = Number(n) || 0; return n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB'; };
+function fmtUptime(secs) {
+  const s = Math.max(0, Math.floor(Number(secs) || 0)), d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return d ? d + ' d ' + h + ' h' : h ? h + ' h ' + m + ' min' : m ? m + ' min' : s + ' s';
+}
+// the choices of this browser (the bridge keeps no per-user settings)
+const PREF_VIEW = 'pref:view', PREF_FSIDLE = 'pref:fsidle';
+const getPref = (k, def) => { try { const v = localStorage.getItem(k); return v === null ? def : v; } catch (e) { return def; } };
+const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage may be off */ } };
+
 // ---- tile view ----
 const viewModeKey = (...parts) => 'view:' + parts.join(':');
 // placeholderStyle gives a tile without a picture its own colour, the same one every time.
@@ -363,7 +387,7 @@ function splitPath(rest) {
   try { return rest.split('/').map(decodeURIComponent); } catch (e) { return null; }
 }
 
-const TABS = ['now', 'queue', 'favorites', 'browse', 'search'];
+const TABS = ['now', 'queue', 'favorites', 'browse', 'search', 'settings'];
 // parseHash maps '#', '#queue' or '#browse/prov/kind/id' to a route.
 function parseHash(h) {
   const rest = String(h || '').replace(/^#/, '');
@@ -424,7 +448,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, deviceLabel, EQ_FREQS, EQ_PRESETS, SPEEDS, speedLabel, fmtBytes, fmtUptime, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -442,6 +466,7 @@ if (typeof document !== 'undefined') (function () {
     more: 'M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm12 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
     note: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z',
     lyrics: 'M14 17H4v2h10v-2zm6-8H4v2h16V9zM4 15h16v-2H4v2zM4 5v2h16V5H4z',
+    gear: 'M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z',
     queue: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
     browse: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z',
     search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
@@ -511,6 +536,7 @@ if (typeof document !== 'undefined') (function () {
     S = reduce(S, ev);
     if (ev.type === 'state' || ev.type === 'tick') {
       renderNow();
+      if (setUi && document.body.dataset.tab === 'settings') setUi.paintSound();
       if (curIndex(prev.state) !== curIndex(S.state)) renderQueue();
     } else if (ev.type === 'queue') {
       renderQueue();
@@ -806,12 +832,12 @@ if (typeof document !== 'undefined') (function () {
     paintArt();
   }
   // Controls hide after a few quiet seconds and return on mouse, touch, key or gamepad input.
-  const FS_IDLE_MS = 3500;
+  const fsIdleMs = () => { const v = Number(getPref(PREF_FSIDLE, '3.5')); return v > 0 ? v * 1000 : 0; };
   let fsIdleTimer = 0, padSig = '';
   function fsWake() {
     $('now').classList.remove('fs-idle');
     clearTimeout(fsIdleTimer);
-    if (fsOn()) fsIdleTimer = setTimeout(() => { if (fsOn()) $('now').classList.add('fs-idle'); }, FS_IDLE_MS);
+    if (fsOn() && fsIdleMs()) fsIdleTimer = setTimeout(() => { if (fsOn()) $('now').classList.add('fs-idle'); }, fsIdleMs());
   }
   function pollPads() {
     if (!fsOn() || typeof navigator.getGamepads !== 'function') return;
@@ -1067,7 +1093,7 @@ if (typeof document !== 'undefined') (function () {
   // size of the page it returned), so a list is finished when a page comes back short.
   const PAGE = 50;
   const pageDone = (n) => n < PAGE;
-  const getViewMode = (key) => { try { return localStorage.getItem(key) === 'list' ? 'list' : 'tiles'; } catch (e) { return 'tiles'; } };
+  const getViewMode = (key) => { const v = getPref(key, null); return (v === null ? getPref(PREF_VIEW, 'tiles') : v) === 'list' ? 'list' : 'tiles'; };
   const saveViewMode = (key, m) => { try { localStorage.setItem(key, m); } catch (e) { /* storage may be off */ } };
   // chunkPage pages through a list that is already loaded (a folder, the favorites)
   const chunkPage = (get, size = 120) => {
@@ -1842,6 +1868,105 @@ if (typeof document !== 'undefined') (function () {
     }
   }
 
+
+  // ---- Settings ----
+  let setUi = null; // the live controls of the Settings page, refreshed from state
+  const setCard = (title, ...kids) => h('section', { class: 'scard' }, h('h3', null, title), ...kids);
+  const setRow = (label, control, sub) => h('div', { class: 'srow' }, h('div', { class: 'slabel' }, h('div', null, label), sub ? h('div', { class: 'dim ssub' }, sub) : null), control);
+  const switchBtn = (on, onchange, label) => {
+    const b = h('button', { class: 'switch', role: 'switch', 'aria-label': label, 'aria-checked': String(!!on), onclick: () => { const v = b.getAttribute('aria-checked') !== 'true'; b.setAttribute('aria-checked', String(v)); onchange(v); } }, h('span'));
+    return b;
+  };
+  const chipRow = (items, current, pick, fmt) => h('div', { class: 'chips' }, items.map((v) =>
+    h('button', { class: 'chip', 'aria-pressed': String(String(v) === String(current)), onclick: () => pick(v) }, fmt ? fmt(v) : String(v))));
+
+  async function renderSettings() {
+    const root = $('settings'), my = ++setSeq;
+    const st = () => S.state || {};
+    // audio output
+    const devList = h('div', { class: 'radios', role: 'radiogroup', 'aria-label': 'Audio output' }, h('div', { class: 'dim' }, 'Loading…'));
+    async function loadDevices() {
+      const r = await cmd('device', { name: 'list' }, false);
+      if (my !== setSeq) return;
+      const devs = (r && r.job && r.job.result && r.job.result.devices) || [];
+      if (!devs.length) { devList.replaceChildren(h('div', { class: 'dim' }, r ? 'No output devices reported' : 'Player offline')); return; }
+      devList.replaceChildren(...devs.map((d) => h('button', { class: 'radio', role: 'radio', 'aria-checked': String(!!d.active), onclick: async () => {
+        if (d.active) return;
+        devList.querySelectorAll('.radio').forEach((x) => { x.disabled = true; });
+        const done = await cmd('device', { name: d.name }, false);
+        toast(done ? 'Output: ' + deviceLabel(d.name) : 'Could not switch the output', !done);
+        loadDevices();
+      } }, h('span', { class: 'dot' }), h('span', { class: 'rtext' }, h('span', null, deviceLabel(d.name)), h('span', { class: 'dim ssub' }, d.name)))));
+    }
+    // sound
+    const presetSel = h('select', { class: 'vsel', 'aria-label': 'EQ preset', onchange: async () => { if (presetSel.value) await cmd('eq', { name: presetSel.value }, false); } },
+      h('option', { value: '' }, 'Custom'), EQ_PRESETS.map((p) => h('option', { value: p }, p)));
+    const sliders = EQ_FREQS.map((f, i) => {
+      const val = h('span', { class: 'eqv' }, '0');
+      const inp = h('input', { type: 'range', min: -12, max: 12, step: 1, value: 0, 'aria-label': f + ' Hz', orient: 'vertical' });
+      let t = 0;
+      inp.oninput = () => { val.textContent = inp.value; clearTimeout(t); t = setTimeout(() => cmd('eq', { band: i, value: Number(inp.value) }, false), 120); };
+      return { el: h('div', { class: 'eqband' }, val, inp, h('span', { class: 'eqf dim' }, f)), inp, val };
+    });
+    const monoSw = switchBtn(false, (v) => cmd('mono', { name: v ? 'on' : 'off' }, false), 'Mono output');
+    const speedChips = h('div');
+    const paintSound = () => {
+      const s = st();
+      presetSel.value = EQ_PRESETS.includes(s.eq_preset) ? s.eq_preset : '';
+      (s.eq_bands || []).forEach((v, i) => { if (sliders[i] && document.activeElement !== sliders[i].inp) { sliders[i].inp.value = v; sliders[i].val.textContent = String(Math.round(v)); } });
+      monoSw.setAttribute('aria-checked', String(!!s.mono));
+      speedChips.replaceChildren(chipRow(SPEEDS, Number(s.speed) || 1, (v) => cmd('speed', { value: v }, false), speedLabel));
+    };
+    setUi = { my, paintSound };
+    // this browser
+    const viewChips = chipRow(['tiles', 'list'], getPref(PREF_VIEW, 'tiles'), (v) => { setPref(PREF_VIEW, v); toast('New lists open as ' + v); renderSettings(); }, (v) => (v === 'tiles' ? 'Tiles' : 'List'));
+    const idleChips = chipRow(['0', '3.5', '6', '12'], getPref(PREF_FSIDLE, '3.5'), (v) => { setPref(PREF_FSIDLE, v); renderSettings(); }, (v) => (v === '0' ? 'Never' : Number(v) + ' s'));
+    const resetBtn = h('button', { class: 'btn', onclick: () => {
+      try { Object.keys(localStorage).filter((k) => /^(view|order):/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch (e) { /* storage may be off */ }
+      toast('Saved view choices cleared');
+    } }, 'Reset saved view choices');
+    // library
+    const lib = h('div', { class: 'dim' }, 'Loading…');
+    // about
+    const about = h('div', { class: 'dim' }, 'Loading…');
+
+    root.replaceChildren(
+      h('div', { class: 'head' }, h('h2', null, 'Settings')),
+      setCard('Audio output', devList, h('p', { class: 'dim snote' }, 'Switching restarts the audio stream; playback may pause for a moment.')),
+      setCard('Sound', setRow('Equalizer', presetSel), h('div', { class: 'eq' }, sliders.map((x) => x.el)),
+        setRow('Mono', monoSw, 'Mix both channels into one'), setRow('Speed', speedChips)),
+      setCard('This browser', setRow('New lists open as', viewChips), setRow('Hide fullscreen controls after', idleChips), setRow('Sort and filter choices', resetBtn)),
+      setCard('Library', lib),
+      setCard('About', about));
+    paintSound();
+    loadDevices();
+
+    // library and about come from the bridge
+    try {
+      const [prov, ab, caps] = await Promise.all([loadProviders(), api.get('/api/about'), api.get('/api/capabilities').catch(() => null)]);
+      if (my !== setSeq) return;
+      const b = ab.bridge || {};
+      lib.replaceChildren(
+        ...(prov || []).map((p) => setRow(p.name, h('span', { class: 'dim' }, [p.searchable && 'search', p.browse_albums && 'albums', p.browse_artists && 'artists', p.catalog && 'catalog'].filter(Boolean).join(' · ')))),
+        setRow('Navidrome covers', h('span', { class: 'dim' }, b.navidrome ? 'login found in cliamp config' : 'no login: placeholders'), 'Album, artist and playlist pictures'),
+        setRow('Music folder', h('span', { class: 'dim' }, b.music_root ? b.music_root : 'off'), 'The file browser and the Folder filter'),
+        setRow('Radio directory', h('span', { class: 'dim' }, ab.features && ab.features.radio_directory ? 'radio-browser.info' : 'off'), 'Station logos, details and search'));
+      const used = b.art_cache_bytes || 0, max = b.art_cache_max || 0;
+      about.replaceChildren(
+        setRow('cliamp-web', h('span', null, (ab.commit ? ab.commit : 'dev') + (ab.modified ? ' +local changes' : '')), ab.built ? 'built ' + new Date(ab.built).toLocaleString() : ''),
+        setRow('Bridge', h('span', { class: 'dim' }, (b.listen || '') + (b.lan ? ' · reachable on the network' : ' · this machine only')), ab.go + ' · ' + ab.os),
+        setRow('Running for', h('span', { class: 'dim' }, fmtUptime(ab.uptime))),
+        setRow('Browsers connected', h('span', { class: 'dim' }, String(ab.clients == null ? '–' : ab.clients))),
+        setRow('cliamp', h('span', { class: ab.player && ab.player.online ? 'ok' : 'bad' }, ab.player && ab.player.online ? 'online' : 'offline'),
+          caps && Array.isArray(caps.result) ? 'API v' + (caps.version || 2) + ' · ' + caps.result.length + ' operations' : ''),
+        setRow('Picture cache', h('span', { class: 'dim' }, fmtBytes(used) + (max ? ' of ' + fmtBytes(max) : '')),
+          'Covers, discs and logos kept on the bridge'));
+    } catch (e) {
+      if (my === setSeq) { lib.replaceChildren(h('div', { class: 'dim' }, 'Could not load')); about.replaceChildren(h('div', { class: 'dim' }, 'Could not load')); }
+    }
+  }
+  let setSeq = 0;
+
   // ---- routing ----
   function route() {
     trackTrail();
@@ -1851,6 +1976,7 @@ if (typeof document !== 'undefined') (function () {
     if (r.tab === 'browse') renderBrowse(r.rest);
     if (r.tab === 'favorites') { renderFavorites(); loadFavs(); }
     if (r.tab === 'search') renderProviderChips();
+    if (r.tab === 'settings') renderSettings();
     if (r.tab === 'queue' || (r.tab === 'now' && matchMedia('(min-width: 900px)').matches)) {
       const cur = document.querySelector('#queue li.cur');
       if (cur) cur.scrollIntoView({ block: 'center' });

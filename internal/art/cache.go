@@ -85,6 +85,13 @@ func hashKey(key string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// Stats reports how many bytes the cache holds and the most it keeps.
+func (c *Cache) Stats() (used, max int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.total, c.max
+}
+
 func (c *Cache) path(h string) string { return filepath.Join(c.dir, h[:2], h) }
 
 // Do returns the image stored under key, else runs fetch once for all

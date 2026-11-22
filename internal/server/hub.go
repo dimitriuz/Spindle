@@ -34,6 +34,13 @@ func (h *Hub) Subscribe() (uint64, <-chan Frame) {
 	return h.next, cl.ch
 }
 
+// Count is the number of browsers listening right now.
+func (h *Hub) Count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.c)
+}
+
 func (h *Hub) Unsubscribe(id uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
