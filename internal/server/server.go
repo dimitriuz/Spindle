@@ -31,6 +31,8 @@ type Config struct {
 	ItemArt ItemArtSource
 	// StationArt finds radio station logos by name for /api/art/station; nil means none.
 	StationArt StationArtSource
+	// StationMeta describes radio catalog stations for /api/radio/meta; nil means none.
+	StationMeta StationMetaSource
 	// FolderArt makes thumbnails of music folder covers for /api/files/art; nil means none.
 	FolderArt FolderArtSource
 	// UI is the embedded web interface (webui: index.html, app.css, app.js),
@@ -89,6 +91,8 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/artist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryArtistTracks)))
 	mux.Handle("GET /api/library/{provider}/artist/{id}/albums", s.protect(http.HandlerFunc(s.libraryArtistAlbums)))
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
+	mux.Handle("GET /api/radio/search", s.protect(http.HandlerFunc(s.radioSearch)))
+	mux.Handle("POST /api/radio/meta", s.protect(http.HandlerFunc(s.radioMeta)))
 	mux.Handle("GET /api/art/station", s.protect(http.HandlerFunc(s.stationArt)))
 	mux.Handle("GET /api/art/item", s.protect(http.HandlerFunc(s.itemArt)))
 	mux.Handle("GET /api/art/{kind}", s.protect(http.HandlerFunc(s.art)))

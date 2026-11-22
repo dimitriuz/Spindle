@@ -90,6 +90,51 @@ function techLine(info) {
     info.sample_rate && kHz(info.sample_rate), ch].filter(Boolean).join(' • ');
 }
 
+// ---- radio ----
+// radioNow: what to show for a playing station. cliamp puts the stream's own
+// "Artist - Title" (or "Title by Artist") in the artist field and the station
+// name in the title. Returns null for anything that is not a station.
+function radioNow(song) {
+  const pm = (song && song.provider_meta) || {};
+  const station = (song && (song.station || pm['radio.name'])) || '';
+  if (!song || !song.stream || !station) return null;
+  const raw = String(song.artist || '').trim();
+  let title = raw, artist = '', m;
+  if ((m = raw.match(/^(.+?)\s+[-–]\s+(.+)$/))) { artist = m[1]; title = m[2]; }
+  else if ((m = raw.match(/^(.+)\s+by\s+(.+)$/i))) { title = m[1]; artist = m[2]; }
+  const place = [pm['radio.country'], pm['radio.state']].filter(Boolean).join(', ');
+  if (!raw) return { title: station, artist: '', album: place };
+  return { title, artist: artist || station, album: [artist ? station : '', place].filter(Boolean).join(' · ') };
+}
+// streamInfo: format and bitrate cliamp already knows about a station
+function streamInfo(song) {
+  const pm = (song && song.provider_meta) || {};
+  const o = {};
+  if (pm['radio.codec']) o.format = String(pm['radio.codec']).toUpperCase();
+  const br = parseInt(pm['radio.bitrate'], 10);
+  if (br > 0) o.bitrate_kbps = br;
+  return o;
+}
+// stationSub: the line under a station tile, from the directory's details
+const stationSub = (m) => (m ? [m.codec, m.bitrate > 0 && m.bitrate + 'k', m.country, m.found !== false && !m.online && 'offline'].filter(Boolean).join(' · ') : '');
+// facetValues: the distinct values of one facet over the items, most common first
+function facetValues(items, get) {
+  const n = new Map();
+  for (const o of items) for (const v of get(o) || []) if (v) n.set(v, (n.get(v) || 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).map(([v, c]) => ({ v, n: c }));
+}
+// viewRows: the items to show under a sort, facet choices and "hide offline"
+function viewRows(all, view, sorts, facets) {
+  let rows = all.filter((o) => {
+    if (view.hideDead && o.dead) return false;
+    for (const f of facets || []) { const want = view.facets[f.id]; if (want && !(f.get(o) || []).includes(want)) return false; }
+    return true;
+  });
+  const sort = (sorts || []).find((x) => x.id === view.sort && x.cmp);
+  if (sort) rows = rows.map((o, i) => [o, i]).sort((a, b) => sort.cmp(a[0], b[0]) || a[1] - b[1]).map((x) => x[0]);
+  return rows;
+}
+
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
@@ -350,7 +395,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -533,7 +578,8 @@ if (typeof document !== 'undefined') (function () {
     box.querySelector('.ph').hidden = discOnly || coverShown;
   }
   function renderTech() {
-    const t = techLine(art.info);
+    const song = S.state && (S.state.track || S.state.logical_track);
+    const t = techLine(Object.assign({}, streamInfo(song), art.info)); // what the stream or file says wins over cliamp's catalog
     $('tech').textContent = t;
     $('tech').hidden = !t;
   }
@@ -775,14 +821,15 @@ if (typeof document !== 'undefined') (function () {
     const st = S.state, song = st && (st.track || st.logical_track);
     $('idle').hidden = !!song;
     $('player').hidden = !song;
-    document.title = song ? (song.title || '') + ' · cliamp' : 'cliamp';
+    document.title = song ? ((radioNow(song) || song).title || '') + ' · cliamp' : 'cliamp';
     if (!st) return;
     if (song) {
       $('trackno').textContent = song.track_number ? String(song.track_number).padStart(2, '0') + ' · ' : '';
-      $('titletext').textContent = song.title || '';
-      $('artist').textContent = song.artist || '';
-      updateArt(song); refreshInfo();
-      $('album').textContent = [song.album, song.year].filter(Boolean).join(' · ');
+      const rn = radioNow(song);
+      $('titletext').textContent = rn ? rn.title : song.title || '';
+      $('artist').textContent = rn ? rn.artist : song.artist || '';
+      updateArt(song); refreshInfo(); renderTech();
+      $('album').textContent = rn ? rn.album : [song.album, song.year].filter(Boolean).join(' · ');
       $('dur').textContent = fmtTime(st.duration);
       $('bar').setAttribute('aria-valuemax', Math.round(Number(st.duration) || 0));
       $('bar').classList.toggle('unseekable', !st.seekable);
@@ -1010,8 +1057,14 @@ if (typeof document !== 'undefined') (function () {
     const ul = h('ul'), status = h('div', { class: 'feedmsg dim', 'aria-live': 'polite' }), sentinel = h('div', { class: 'sentinel', 'aria-hidden': 'true' });
     const all = [];
     let done = false, busy = false, failed = false, filling = false, dead = false, io = null;
-    const make = (o) => (mode === 'tiles' ? tile(o) : item(o));
-    const paint = () => { ul.className = mode === 'tiles' ? 'grid' : 'list'; ul.replaceChildren(...all.map(make)); };
+    const els = new Map();
+    const make = (o) => { const el = mode === 'tiles' ? tile(o) : item(o); els.set(o, el); return el; };
+    // sort, facet filters and "hide offline" apply to what is loaded so far
+    const view = { sort: '', facets: {}, hideDead: true };
+    const narrowed = () => !!view.sort || Object.values(view.facets).some(Boolean);
+    const shown = () => viewRows(all, view, c.sorts, c.facets);
+    const note = () => { status.textContent = done && !shown().length ? (all.length ? 'Nothing matches the filters' : c.empty || 'Nothing here') : ''; };
+    const paint = () => { ul.className = mode === 'tiles' ? 'grid' : 'list'; ul.replaceChildren(...shown().map(make)); note(); };
     const nearBottom = () => sentinel.getBoundingClientRect().top < innerHeight + 700;
     async function more() {
       busy = true; failed = false; status.textContent = 'Loading…';
@@ -1019,13 +1072,26 @@ if (typeof document !== 'undefined') (function () {
         const r = await c.page();
         if (dead || c.my !== nav) return;
         const rows = r.rows || [];
-        if (rows.length) { const os = rows.map(c.opts); all.push(...os); ul.append(...os.map(make)); }
+        if (rows.length) {
+          const os = rows.map(c.opts); all.push(...os);
+          if (narrowed()) paint(); else ul.append(...os.filter((o) => !(view.hideDead && o.dead)).map(make));
+          buildTools(); enrich(os);
+        }
         if (!rows.length || r.done) done = true;
-        status.textContent = done && !all.length ? (c.empty || 'Nothing here') : '';
+        note();
       } catch (e) {
         failed = true;
         status.replaceChildren(h('span', null, 'Could not load more. '), h('button', { class: 'btn', onclick: () => { failed = false; fill(); } }, 'Retry'));
       } finally { busy = false; }
+    }
+    // details that arrive after the rows (station codec, country, votes): redraw what changed
+    async function enrich(os) {
+      if (!c.enrich) return;
+      try { await c.enrich(os); } catch (e) { /* the rows stay as they are */ }
+      if (dead || c.my !== nav) return;
+      if (narrowed() || (view.hideDead && os.some((o) => o.dead))) paint();
+      else os.forEach((o) => { const el = els.get(o); if (el && el.isConnected) el.replaceWith(make(o)); });
+      buildTools();
     }
     async function fill() {
       if (filling) return;
@@ -1052,9 +1118,34 @@ if (typeof document !== 'undefined') (function () {
       return b;
     };
     const toggle = c.modes ? h('div', { class: 'vtoggle', role: 'group', 'aria-label': 'View' }, vbtn('list', 'queue', 'List view'), vbtn('tiles', 'grid', 'Tile view')) : null;
+    const tools = c.sorts || c.facets ? h('div', { class: 'viewtools' }) : null;
+    function buildTools() {
+      if (!tools) return;
+      const kids = [];
+      const pick = (label, value, opts, onchange) => {
+        const sel = h('select', { class: 'vsel', 'aria-label': label, onchange: () => onchange(sel.value) },
+          h('option', { value: '' }, label), opts.map((o) => h('option', { value: o.v }, o.label)));
+        sel.value = value;
+        return sel;
+      };
+      if (c.sorts) kids.push(pick('Sort', view.sort, c.sorts.filter((x) => x.cmp).map((x) => ({ v: x.id, label: x.label })), (v) => { view.sort = v; paint(); }));
+      for (const f of c.facets || []) {
+        const vals = facetValues(all, f.get).slice(0, 60);
+        if (vals.length < 2 && !view.facets[f.id]) continue;
+        kids.push(pick(f.label, view.facets[f.id] || '', vals.map((x) => ({ v: x.v, label: x.v + ' (' + x.n + ')' })), (v) => { view.facets[f.id] = v; paint(); fill(); }));
+      }
+      if (all.some((o) => o.dead)) {
+        const cb = h('input', { type: 'checkbox', onchange: () => { view.hideDead = cb.checked; paint(); fill(); } });
+        cb.checked = view.hideDead;
+        kids.push(h('label', { class: 'vchk' }, cb, ' Hide offline'));
+      }
+      tools.replaceChildren(...kids);
+      tools.hidden = !kids.length;
+    }
+    buildTools();
     ul.className = mode === 'tiles' ? 'grid' : 'list';
     return {
-      toggle, body: [ul, status, sentinel],
+      toggle, tools, body: [ul, status, sentinel],
       start() {
         if ('IntersectionObserver' in window) {
           io = new IntersectionObserver((es) => { if (dead || c.my !== nav) { io.disconnect(); return; } if (es.some((e) => e.isIntersecting)) fill(); }, { rootMargin: '700px 0px' });
@@ -1067,8 +1158,24 @@ if (typeof document !== 'undefined') (function () {
   }
   const listBar = (...kids) => { const k = kids.filter(Boolean); return k.length ? h('div', { class: 'listbar' }, k) : null; };
 
+  // In-app trail: the hash of every history entry we showed, by position. The
+  // back arrow goes to the page you came from (an artist's albums, favorites,
+  // a search) and only falls back to the fixed parent when there is none.
+  const trail = [];
+  let trailAt = 0;
+  function trackTrail() {
+    let i = history.state && Number.isInteger(history.state.i) ? history.state.i : null;
+    if (i === null) { i = trailAt + 1; try { history.replaceState({ i }, ''); } catch (e) { /* keep the fixed parent */ } }
+    trailAt = i;
+    trail[i] = location.hash;
+    trail.length = i + 1; // entries after this one are gone from the forward history
+  }
+  function backClick(e) {
+    const prev = trail[trailAt - 1];
+    if (prev && prev !== location.hash && /^#(browse|favorites|search)/.test(prev)) { e.preventDefault(); history.back(); }
+  }
   const head = (title, back, extra) => h('div', { class: 'head' },
-    back ? h('a', { class: 'back', href: back, 'aria-label': 'Back' }, svg('back')) : null, h('h2', null, title), extra);
+    back ? h('a', { class: 'back', href: back, 'aria-label': 'Back', onclick: backClick }, svg('back')) : null, h('h2', null, title), extra);
   const msg = (cls, text) => h('div', { class: cls }, text);
   const enc = encodeURIComponent;
 
@@ -1412,6 +1519,7 @@ if (typeof document !== 'undefined') (function () {
     }
     // a plain kind list, as a list or tiles, loaded as you scroll
     let off = 0;
+    const radio = prov === 'radio' && kind === 'catalog';
     const col = collection({ my, key: viewModeKey('browse', prov, kind), modes: true, empty: 'Nothing here',
       page: async () => {
         const r = await api.get(listUrl(prov, kind, off));
@@ -1419,9 +1527,66 @@ if (typeof document !== 'undefined') (function () {
         off += rows.length;
         return { rows, done: pageDone(rows.length) };
       },
-      opts: (row) => browseOpts(prov, kind, row) });
-    show(hdr, listBar(col.toggle), ...col.body);
+      opts: (row) => browseOpts(prov, kind, row),
+      ...(radio ? radioView(my) : {}) });
+    if (!radio) { show(hdr, listBar(col.toggle), ...col.body); col.start(); return; }
+    // radio: a search box over the public station directory replaces the catalog while it has text
+    const box = h('input', { type: 'search', class: 'filter', placeholder: 'Search stations by name, genre or country', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Search stations' });
+    const results = h('div', { class: 'stnresults', hidden: true });
+    const catalog = h('div', { class: 'stncatalog' }, listBar(col.toggle), col.tools, ...col.body);
+    let timer = 0, seq = 0, scol = null;
+    box.oninput = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const q = box.value.trim(), mine = ++seq;
+        if (scol) { scol.destroy(); scol = null; }
+        results.hidden = !q; catalog.hidden = !!q;
+        if (!q) { results.replaceChildren(); return; }
+        results.replaceChildren(h('div', { class: 'feedmsg dim' }, 'Searching…'));
+        try {
+          const r = await api.get('/api/radio/search?q=' + enc(q));
+          if (mine !== seq || my !== nav) return;
+          scol = collection({ my, key: viewModeKey('radio', 'search'), modes: true, empty: 'No stations found',
+            page: async () => ({ rows: r.stations || [], done: true }), opts: stationHitOpts, ...radioView(my, true) });
+          results.replaceChildren(listBar(scol.toggle), scol.tools, ...scol.body);
+          scol.start();
+        } catch (e) { if (mine === seq) results.replaceChildren(msg('error', e.message || 'Search failed')); }
+      }, 350);
+    };
+    show(hdr, box, results, catalog);
     col.start();
+  }
+  // sorting and filters of station lists; details of catalog stations are fetched per page
+  const byNum = (k) => (a, b) => ((b.meta && b.meta[k]) || 0) - ((a.meta && a.meta[k]) || 0);
+  function radioView(my, hasMeta) {
+    return {
+      sorts: [{ id: '', label: 'Default' }, { id: 'name', label: 'Name', cmp: (a, b) => String(a.title).localeCompare(String(b.title)) },
+        { id: 'votes', label: 'Most popular', cmp: byNum('votes') }, { id: 'bitrate', label: 'Highest bitrate', cmp: byNum('bitrate') }],
+      facets: [
+        { id: 'country', label: 'Country', get: (o) => [o.meta && o.meta.country] },
+        { id: 'tag', label: 'Genre', get: (o) => (o.meta && o.meta.tags) || [] },
+        { id: 'codec', label: 'Format', get: (o) => [o.meta && o.meta.codec] },
+        { id: 'lang', label: 'Language', get: (o) => [o.meta && o.meta.language] },
+      ],
+      enrich: hasMeta ? null : async (os) => {
+        const names = os.filter((o) => o.station).map((o) => o.title);
+        if (!names.length) return;
+        const r = await api.post('/api/radio/meta', { names });
+        const by = new Map((r.stations || []).map((m) => [m.name, m]));
+        for (const o of os) {
+          const m = o.station && by.get(o.title);
+          if (m && m.found) { o.meta = m; o.sub = stationSub(m) || o.sub; o.dead = !m.online; }
+        }
+      },
+    };
+  }
+  // a station found by the directory search: plays its stream as given
+  function stationHitOpts(hit) {
+    const hh = heartBtn({ req: { kind: 'radio', provider: 'radio', id: 'f:' + hit.url, title: hit.name } });
+    const play = () => playTrack({ title: hit.name, path: hit.url, stream: true, genre: (hit.tags || []).join(',') });
+    return { title: hit.name, sub: stationSub(hit) || (hit.tags || []).join(', '), tkind: 'radio', art: '/api/art/station?id=' + enc(hit.id),
+      meta: hit, dead: !hit.online, heart: hh, onTap: play,
+      more: () => ({ spec: { kind: 'radio', fav: favState(hh) }, run: { play, fav: () => hh.toggle() } }) };
   }
   // the entry options of one row of a provider list
   function browseOpts(prov, kind, row) {
@@ -1443,7 +1608,7 @@ if (typeof document !== 'undefined') (function () {
     }
     // radio catalog: stations have no path; tap plays via provider.load
     const hh = row.favoritable ? heartBtn({ on: !!row.favorite || /^★ /.test(row.name || ''), req: { kind: 'radio', provider: prov, id: row.id } }) : null;
-    return { title: name, sub: row.genre || '', tkind: 'radio', art: row.favoritable ? stationArtUrl(name) : '', heart: hh, more: radioMore(prov, row.id, hh),
+    return { title: name, sub: row.genre || '', tkind: 'radio', station: !!row.favoritable, art: row.favoritable ? stationArtUrl(name) : '', heart: hh, more: radioMore(prov, row.id, hh),
       onTap: () => { cmd('provider.load', { provider: prov, playlist: row.id }, true); rev(); } };
   }
   // ---- Files: the music folder cliamp's own file browser starts in ----
@@ -1573,6 +1738,13 @@ if (typeof document !== 'undefined') (function () {
     if (!searchProv) { out.replaceChildren(msg('empty', 'no searchable provider')); return; }
     if (!q) { out.replaceChildren(); return; }
     try {
+      if (searchProv === 'radio') { // the public station directory: name, genre and country at once
+        const rs = await api.get('/api/radio/search?q=' + enc(q));
+        if (my !== searchSeq) return;
+        const hits = rs.stations || [];
+        out.replaceChildren(hits.length ? h('ul', { class: 'list' }, hits.map((x) => item(stationHitOpts(x)))) : msg('empty', 'No stations found'));
+        return;
+      }
       const r = await api.get('/api/search/' + enc(searchProv) + '?q=' + enc(q) + '&offset=0&limit=50');
       if (my !== searchSeq) return;
       const rows = r.tracks || [];
@@ -1584,6 +1756,7 @@ if (typeof document !== 'undefined') (function () {
 
   // ---- routing ----
   function route() {
+    trackTrail();
     const r = parseHash(location.hash);
     document.body.dataset.tab = r.tab;
     closeMenu(false);

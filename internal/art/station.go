@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +32,49 @@ type stationRec struct {
 	Favicon string `json:"favicon"`
 	Codec   string `json:"codec"`
 	Bitrate int    `json:"bitrate"`
+	Tags    string `json:"tags"`
+	Country string `json:"country"`
+	Lang    string `json:"language"`
+	Votes   int    `json:"votes"`
+	Clicks  int    `json:"clickcount"`
+	Check   int    `json:"lastcheckok"`
+	Home    string `json:"homepage"`
+	UUID    string `json:"stationuuid"`
+	Stream  string `json:"url_resolved"`
+	Raw     string `json:"url"`
+}
+
+// StationMeta is what the page shows on a radio tile and filters by.
+type StationMeta struct {
+	Name     string   `json:"name"` // as asked
+	Found    bool     `json:"found"`
+	Codec    string   `json:"codec,omitempty"`
+	Bitrate  int      `json:"bitrate,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Country  string   `json:"country,omitempty"`
+	Language string   `json:"language,omitempty"`
+	Votes    int      `json:"votes,omitempty"`
+	Clicks   int      `json:"clicks,omitempty"`
+	Online   bool     `json:"online"` // the directory's last check of the stream passed
+	Homepage string   `json:"homepage,omitempty"`
+}
+
+func metaOf(name string, rec stationRec, ok bool) StationMeta {
+	m := StationMeta{Name: name, Found: ok}
+	if !ok {
+		return m
+	}
+	m.Codec, m.Bitrate, m.Country, m.Language = strings.ToUpper(rec.Codec), rec.Bitrate, rec.Country, strings.Title(rec.Lang) //nolint:staticcheck
+	m.Votes, m.Clicks, m.Online = rec.Votes, rec.Clicks, rec.Check == 1
+	if strings.HasPrefix(rec.Home, "http") {
+		m.Homepage = rec.Home
+	}
+	for _, t := range strings.Split(rec.Tags, ",") {
+		if t = strings.TrimSpace(t); t != "" && len(t) <= 30 && len(m.Tags) < 8 {
+			m.Tags = append(m.Tags, t)
+		}
+	}
+	return m
 }
 
 // Stations finds logos and stream details for internet radio: first in the
@@ -41,8 +85,9 @@ type Stations struct {
 	HTTP    *http.Client
 	Servers []string
 
-	mu    sync.Mutex
-	byKey map[string]stationCached
+	mu     sync.Mutex
+	byKey  map[string]stationCached
+	favico map[string]string // station uuid -> logo, for the stations a search showed
 }
 
 type stationCached struct {
@@ -278,4 +323,95 @@ func (s *Stations) Info(ctx context.Context, streamURL string) (Info, error) {
 		return Info{}, ErrNoInfo
 	}
 	return info, nil
+}
+
+// Meta looks up many stations by name, a few at a time. Names the directory
+// does not know come back with Found false; one failure never fails the rest.
+func (s *Stations) Meta(ctx context.Context, names []string) []StationMeta {
+	out := make([]StationMeta, len(names))
+	sem := make(chan struct{}, 6)
+	var wg sync.WaitGroup
+	for i, n := range names {
+		wg.Add(1)
+		go func(i int, n string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			rec, ok, err := s.ByName(ctx, n)
+			out[i] = metaOf(n, rec, ok && err == nil)
+		}(i, n)
+	}
+	wg.Wait()
+	return out
+}
+
+// StationHit is one station found by a search: enough to show and to play.
+type StationHit struct {
+	ID  string `json:"id"` // directory id; the logo route takes it
+	URL string `json:"url"`
+	StationMeta
+}
+
+// Search looks stations up by name, tag and country at once and merges them,
+// the most voted first. It remembers each hit's logo address so the logo route
+// can serve it by id without taking an address from the browser.
+func (s *Stations) Search(ctx context.Context, q string) []StationHit {
+	q = strings.TrimSpace(q)
+	if q == "" || len(q) > 100 {
+		return nil
+	}
+	base := url.Values{"hidebroken": {"true"}, "order": {"votes"}, "reverse": {"true"}, "limit": {"40"}}
+	results := make([][]stationRec, 3)
+	var wg sync.WaitGroup
+	for i, field := range []string{"name", "tag", "country"} {
+		wg.Add(1)
+		go func(i int, field string) {
+			defer wg.Done()
+			v := url.Values{field: {q}}
+			for k, vv := range base {
+				v[k] = vv
+			}
+			results[i], _ = s.directory(ctx, "/json/stations/search", v)
+		}(i, field)
+	}
+	wg.Wait()
+	seen := map[string]bool{}
+	var hits []StationHit
+	for _, recs := range results {
+		for _, r := range recs {
+			u := r.Stream
+			if u == "" {
+				u = r.Raw
+			}
+			if r.UUID == "" || seen[r.UUID] || !strings.HasPrefix(u, "http") {
+				continue
+			}
+			seen[r.UUID] = true
+			hits = append(hits, StationHit{ID: r.UUID, URL: u, StationMeta: metaOf(r.Name, r, true)})
+			if strings.HasPrefix(r.Favicon, "http") {
+				s.mu.Lock()
+				if s.favico == nil {
+					s.favico = map[string]string{}
+				}
+				if len(s.favico) > 5000 {
+					s.favico = map[string]string{}
+				}
+				s.favico[r.UUID] = r.Favicon
+				s.mu.Unlock()
+			}
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Votes > hits[j].Votes })
+	if len(hits) > 60 {
+		hits = hits[:60]
+	}
+	return hits
+}
+
+// FaviconOf is the logo address remembered for a station a search returned.
+func (s *Stations) FaviconOf(id string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.favico[id]
+	return u, ok
 }

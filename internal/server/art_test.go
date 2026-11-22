@@ -250,6 +250,57 @@ func (f *fakeStationArt) StationArt(_ context.Context, name string) (*art.Image,
 	return f.img, f.err
 }
 
+func (f *fakeStationArt) StationArtByID(_ context.Context, id string) (*art.Image, error) {
+	f.name = "id:" + id
+	return f.img, f.err
+}
+
+func (f *fakeStationArt) StationMeta(_ context.Context, names []string) []art.StationMeta {
+	out := make([]art.StationMeta, len(names))
+	for i, n := range names {
+		out[i] = art.StationMeta{Name: n, Found: true}
+	}
+	return out
+}
+
+func (f *fakeStationArt) StationSearch(_ context.Context, q string) []art.StationHit {
+	f.name = "q:" + q
+	if q == "none" {
+		return nil
+	}
+	return []art.StationHit{{ID: "u1", URL: "http://x/live", StationMeta: art.StationMeta{Name: "X", Found: true}}}
+}
+
+func TestRadioMetaAndSearchRoutes(t *testing.T) {
+	fs := &fakeStationArt{}
+	cfg := guardedConfig(t)
+	cfg.StationMeta = fs
+	cfg.StationArt = fs
+	h := New(cfg)
+	rec := artGet(h, "/api/radio/search?q=jazz", nil)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"u1"`) || fs.name != "q:jazz" {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := artGet(h, "/api/radio/search?q=none", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"stations":[]`) {
+		t.Fatalf("empty result must be a list: %d %s", rec.Code, rec.Body)
+	}
+	for _, target := range []string{"/api/radio/search", "/api/radio/search?q=" + strings.Repeat("a", 101)} {
+		if rec := artGet(h, target, nil); rec.Code != 400 {
+			t.Fatalf("%s: %d", target, rec.Code)
+		}
+	}
+	if rec := artGet(New(guardedConfig(t)), "/api/radio/search?q=x", nil); rec.Code != 404 {
+		t.Fatalf("no source: %d", rec.Code)
+	}
+	fs.img = &art.Image{Data: []byte("p"), ContentType: "image/png", Key: "k"}
+	if rec := artGet(h, "/api/art/station?id=u1", nil); rec.Code != 200 || fs.name != "id:u1" {
+		t.Fatalf("by id: %d %q", rec.Code, fs.name)
+	}
+	if rec := artGet(h, "/api/art/station?id=u1&name=x", nil); rec.Code != 400 {
+		t.Fatalf("id and name together: %d", rec.Code)
+	}
+}
+
 func TestStationArtRoute(t *testing.T) {
 	fs := &fakeStationArt{img: &art.Image{Data: []byte("png"), ContentType: "image/png", Key: "k1"}}
 	cfg := guardedConfig(t)
@@ -271,5 +322,21 @@ func TestStationArtRoute(t *testing.T) {
 	}
 	if rec := artGet(New(guardedConfig(t)), "/api/art/station?name=x", nil); rec.Code != 404 {
 		t.Fatalf("no source: %d", rec.Code)
+	}
+}
+
+func TestRadioMetaRoute(t *testing.T) {
+	cfg := guardedConfig(t)
+	cfg.StationMeta = &fakeStationArt{}
+	h := New(cfg)
+	rec := enqPost(h, "/api/radio/meta", `{"names":["A [128k] · DE","B"]}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"name":"B"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	many := `{"names":["` + strings.Repeat(`a","`, 60) + `a"]}`
+	for _, body := range []string{`{"names":[]}`, `{}`, `nope`, many, `{"names":["` + strings.Repeat("a", 201) + `"]}`} {
+		if rec := enqPost(h, "/api/radio/meta", body); rec.Code != 400 {
+			t.Fatalf("%.30s: %d", body, rec.Code)
+		}
 	}
 }

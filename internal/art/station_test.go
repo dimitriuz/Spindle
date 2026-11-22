@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -190,5 +191,66 @@ func TestStationErrorsNeverQuoteTheStreamURL(t *testing.T) {
 	}
 	if _, err := r.Info(context.Background(), secret, 0); err != nil && strings.Contains(err.Error(), "SECRET") {
 		t.Fatalf("info error leaks the url: %v", err)
+	}
+}
+
+func TestStationSearchMergesNameTagAndCountryAndRemembersLogos(t *testing.T) {
+	var qmu sync.Mutex
+	var queries []string
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	mux.HandleFunc("/json/stations/search", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		for _, f := range []string{"name", "tag", "country"} {
+			if q.Get(f) != "" {
+				qmu.Lock()
+				queries = append(queries, f)
+				qmu.Unlock()
+			}
+		}
+		if q.Get("hidebroken") != "true" || q.Get("limit") == "" {
+			t.Error("search must hide broken stations and be limited")
+		}
+		switch {
+		case q.Get("name") != "":
+			w.Write([]byte(`[{"stationuuid":"a","name":"Jazz FM","url_resolved":"http://a/live","votes":5,"lastcheckok":1,"tags":"jazz,swing","favicon":"` + srv.URL + `/logo.png"}]`))
+		case q.Get("tag") != "":
+			w.Write([]byte(`[{"stationuuid":"a","name":"Jazz FM","url_resolved":"http://a/live","votes":5},{"stationuuid":"b","name":"Smooth","url":"http://b/live","votes":50,"lastcheckok":1},{"stationuuid":"c","name":"No stream","url_resolved":"ftp://c"}]`))
+		default:
+			w.Write([]byte(`[]`))
+		}
+	})
+	mux.HandleFunc("/logo.png", func(w http.ResponseWriter, r *http.Request) { w.Write(pngBytes(t, 4, 4)) })
+	r := newResolver(t, nil, nil)
+	r.st = &Stations{HTTP: srv.Client(), Servers: []string{srv.URL}}
+	hits := r.StationSearch(context.Background(), "jazz")
+	if len(hits) != 2 || hits[0].ID != "b" || hits[1].ID != "a" {
+		t.Fatalf("want b (more votes) then a, deduplicated, without the non-http stream: %+v", hits)
+	}
+	if hits[1].URL != "http://a/live" || hits[1].Tags[0] != "jazz" || !hits[1].Online || hits[0].URL != "http://b/live" {
+		t.Fatalf("%+v", hits)
+	}
+	if len(queries) != 3 {
+		t.Fatalf("name, tag and country must all be asked: %v", queries)
+	}
+	if img, err := r.StationArtByID(context.Background(), "a"); err != nil || img.ContentType != "image/png" {
+		t.Fatalf("logo by id: %v %+v", err, img)
+	}
+	if _, err := r.StationArtByID(context.Background(), "zzz"); !errors.Is(err, ErrNoArt) {
+		t.Fatalf("an id no search returned must not be fetched: %v", err)
+	}
+	if got := r.StationSearch(context.Background(), "  "); got != nil {
+		t.Fatal("blank query")
+	}
+}
+
+func TestStationMetaTellsFoundFromUnknown(t *testing.T) {
+	f := newFakeRadio(t)
+	f.nameFavicon = "x"
+	r, _ := radioResolver(t, f)
+	got := r.StationMeta(context.Background(), []string{"Classic Vinyl HD [320k] · USA", "Nobody FM"})
+	if len(got) != 2 || !got[0].Found || got[1].Found || got[1].Name != "Nobody FM" {
+		t.Fatalf("%+v", got)
 	}
 }

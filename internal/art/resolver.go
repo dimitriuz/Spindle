@@ -188,3 +188,28 @@ func (r *Resolver) ItemArt(ctx context.Context, kind, id string) (*Image, error)
 		return r.nd.download(ctx, target)
 	})
 }
+
+// StationMeta describes catalog stations by name for the radio page.
+func (r *Resolver) StationMeta(ctx context.Context, names []string) []StationMeta {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	defer cancel()
+	return r.st.Meta(ctx, names)
+}
+
+// StationSearch finds stations in the public directory by name, tag or country.
+func (r *Resolver) StationSearch(ctx context.Context, q string) []StationHit {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+	defer cancel()
+	return r.st.Search(ctx, q)
+}
+
+// StationArtByID returns the logo of a station an earlier search returned.
+func (r *Resolver) StationArtByID(ctx context.Context, id string) (*Image, error) {
+	logo, ok := r.st.FaviconOf(id)
+	if !ok {
+		return nil, ErrNoArt
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	return r.cache.Do("station:id:"+hashKey(id), func() ([]byte, error) { return r.st.Image(ctx, logo) })
+}

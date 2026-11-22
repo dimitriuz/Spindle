@@ -246,6 +246,38 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.nextChunk(3, 0, 120), 3);
   });
 
+  await ok('radio helpers', () => {
+    const song = { stream: true, station: 'Classic Vinyl HD', title: 'Classic Vinyl on walmradio.com', artist: 'Act I: Prologue by Various Artists',
+      provider_meta: { 'radio.codec': 'mp3', 'radio.bitrate': '320', 'radio.country': 'USA', 'radio.state': 'New York' } };
+    assert.deepEqual(A.radioNow(song), { title: 'Act I: Prologue', artist: 'Various Artists', album: 'Classic Vinyl HD · USA, New York' });
+    assert.deepEqual(A.radioNow({ ...song, artist: 'Daft Punk - Around the World' }), { title: 'Around the World', artist: 'Daft Punk', album: 'Classic Vinyl HD · USA, New York' });
+    assert.deepEqual(A.radioNow({ ...song, artist: 'Just a Title' }), { title: 'Just a Title', artist: 'Classic Vinyl HD', album: 'USA, New York' });
+    assert.deepEqual(A.radioNow({ ...song, artist: '' }), { title: 'Classic Vinyl HD', artist: '', album: 'USA, New York' });
+    assert.equal(A.radioNow({ title: 'Song', artist: 'A', stream: false }), null);
+    assert.equal(A.radioNow(null), null);
+    assert.deepEqual(A.streamInfo(song), { format: 'MP3', bitrate_kbps: 320 });
+    assert.deepEqual(A.streamInfo({}), {});
+    assert.equal(A.techLine(Object.assign({}, A.streamInfo(song), undefined)), 'MP3 • 320 kbps');
+    assert.equal(A.stationSub({ codec: 'AAC', bitrate: 64, country: 'Germany', online: true }), 'AAC · 64k · Germany');
+    assert.equal(A.stationSub({ codec: 'MP3', online: false, found: true }), 'MP3 · offline');
+    assert.equal(A.stationSub(null), '');
+  });
+  await ok('facet values, sort and filter of a collection', () => {
+    const mk = (title, meta, dead) => ({ title, meta, dead });
+    const all = [mk('B', { country: 'DE', tags: ['jazz', 'swing'], votes: 5 }), mk('A', { country: 'US', tags: ['jazz'], votes: 50 }),
+      mk('C', { country: 'DE', tags: ['rock'], votes: 1 }, true), mk('D', null)];
+    const facets = [{ id: 'country', get: (o) => [o.meta && o.meta.country] }, { id: 'tag', get: (o) => (o.meta && o.meta.tags) || [] }];
+    const sorts = [{ id: 'name', cmp: (a, b) => a.title.localeCompare(b.title) }, { id: 'votes', cmp: (a, b) => ((b.meta && b.meta.votes) || 0) - ((a.meta && a.meta.votes) || 0) }];
+    assert.deepEqual(A.facetValues(all, facets[1].get), [{ v: 'jazz', n: 2 }, { v: 'rock', n: 1 }, { v: 'swing', n: 1 }]);
+    const names = (v) => A.viewRows(all, { sort: '', facets: {}, hideDead: false, ...v }, sorts, facets).map((o) => o.title).join('');
+    assert.equal(names({}), 'BACD', 'default keeps the loaded order');
+    assert.equal(names({ hideDead: true }), 'BAD', 'offline stations are hidden');
+    assert.equal(names({ sort: 'name' }), 'ABCD');
+    assert.equal(names({ sort: 'votes' }), 'ABCD', 'most voted first (50, 5, 1), unknown last');
+    assert.equal(names({ facets: { country: 'DE' } }), 'BC');
+    assert.equal(names({ facets: { country: 'DE', tag: 'jazz' }, hideDead: true }), 'B', 'facets combine');
+    assert.equal(names({ sort: 'nope' }), 'BACD', 'an unknown sort is ignored');
+  });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
     assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);

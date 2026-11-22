@@ -315,3 +315,9 @@ li.played .t1, li.played .t2, li.played .end { color: var(--dim); opacity: .55; 
 .aname { font-size: 20px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
 .aartist { font-size: 15px; margin-top: 4px; }
 .ameta { font-size: 13px; margin-top: 6px; }
+
+/* Sort and filter bar of a collection */
+.viewtools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.vsel { height: 38px; width: 10.5em; max-width: calc(50% - 4px); padding: 0 12px; border-radius: 19px; border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 14px; }
+.vsel:has(option:checked:not([value=""])) { border-color: var(--accent); color: var(--accent); }
+.vchk { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--dim); }

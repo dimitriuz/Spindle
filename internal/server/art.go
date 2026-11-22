@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"cliamp-web/internal/art"
 )
@@ -113,13 +115,14 @@ func (s *serverState) itemArt(w http.ResponseWriter, r *http.Request) {
 // StationArtSource finds the logo of an internet radio station by name.
 type StationArtSource interface {
 	StationArt(ctx context.Context, name string) (*art.Image, error)
+	StationArtByID(ctx context.Context, id string) (*art.Image, error)
 }
 
 // stationArt serves GET /api/art/station?name=<catalog name>: the logo shown on
 // radio tiles. The name only ever goes to the public radio directory.
 func (s *serverState) stationArt(w http.ResponseWriter, r *http.Request) {
-	name := r.URL.Query().Get("name")
-	if name == "" || len(name) > 200 {
+	name, id := r.URL.Query().Get("name"), r.URL.Query().Get("id")
+	if (name == "") == (id == "") || len(name) > 200 || len(id) > 64 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
 		return
 	}
@@ -127,10 +130,64 @@ func (s *serverState) stationArt(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
 		return
 	}
-	img, err := s.cfg.StationArt.StationArt(r.Context(), name)
+	var img *art.Image
+	var err error
+	if id != "" {
+		img, err = s.cfg.StationArt.StationArtByID(r.Context(), id)
+	} else {
+		img, err = s.cfg.StationArt.StationArt(r.Context(), name)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
 		return
 	}
 	writeImage(w, r, img)
+}
+
+// StationMetaSource describes catalog stations (codec, bitrate, tags, country, votes).
+type StationMetaSource interface {
+	StationMeta(ctx context.Context, names []string) []art.StationMeta
+	StationSearch(ctx context.Context, q string) []art.StationHit
+}
+
+// radioSearch serves GET /api/radio/search?q=: stations of the public radio
+// directory matching a name, tag or country, most voted first.
+func (s *serverState) radioSearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" || len(q) > 100 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
+	if s.cfg.StationMeta == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_meta"})
+		return
+	}
+	hits := s.cfg.StationMeta.StationSearch(r.Context(), q)
+	if hits == nil {
+		hits = []art.StationHit{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stations": hits})
+}
+
+// radioMeta serves POST /api/radio/meta {names:[...]} for the radio page's
+// tile details, sorting and filters. At most 60 names of at most 200 bytes.
+func (s *serverState) radioMeta(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Names []string `json:"names"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil || len(body.Names) == 0 || len(body.Names) > 60 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
+	for _, n := range body.Names {
+		if len(n) > 200 {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+			return
+		}
+	}
+	if s.cfg.StationMeta == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_meta"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"stations": s.cfg.StationMeta.StationMeta(r.Context(), body.Names)})
 }
