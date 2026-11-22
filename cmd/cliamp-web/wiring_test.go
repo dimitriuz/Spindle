@@ -2,11 +2,15 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	pngpkg "image/png"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -297,5 +301,67 @@ func TestRunServesLibraryAndSearch(t *testing.T) {
 	tracks, _ := s["tracks"].([]any)
 	if len(tracks) != 3 || tracks[0].(map[string]any)["stream"] != true {
 		t.Fatalf("search passthrough: %v", s)
+	}
+}
+
+func TestRunServesArtForLocalTrack(t *testing.T) {
+	music := t.TempDir()
+	track := filepath.Join(music, "Artist", "Album", "01.flac")
+	if err := os.MkdirAll(filepath.Dir(track), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var png bytes.Buffer
+	_ = pngpkg.Encode(&png, image.NewRGBA(image.Rect(0, 0, 4, 4)))
+	for name, data := range map[string][]byte{"01.flac": []byte("x"), "cover.png": png.Bytes()} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(track), name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{
+		State: `{"state":"playing","revision":5,"playlist_revision":7}`,
+		Track: `{"title":"Local","path":"` + track + `"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	port := freePort(t)
+	go func() { _ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
+	readStatus(t, dir)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	var resp *http.Response
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err = testHTTP.Get(base + "/api/art/cover?path=" + url.QueryEscape(track))
+		if err == nil && resp.StatusCode == 200 {
+			break
+		}
+		if err == nil {
+			resp.Body.Close()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cover never served: %v %v", err, resp)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "image/png" {
+		t.Fatalf("content type %q", ct)
+	}
+	// a file the player never reported is not readable through the route
+	other := filepath.Join(music, "secret.flac")
+	_ = os.WriteFile(other, []byte("x"), 0o644)
+	_ = os.WriteFile(filepath.Join(music, "cover.png"), png.Bytes(), 0o644)
+	r2, err := testHTTP.Get(base + "/api/art/cover?path=" + url.QueryEscape(other))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2.Body.Close()
+	if r2.StatusCode != 404 {
+		t.Fatalf("unknown track: %d", r2.StatusCode)
 	}
 }

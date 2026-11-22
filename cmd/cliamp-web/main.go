@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"cliamp-web/internal/art"
 	"cliamp-web/internal/ipc"
 	"cliamp-web/internal/server"
 	"cliamp-web/internal/snapshot"
@@ -24,6 +26,7 @@ import (
 
 const (
 	pageSize       = 500
+	artCacheBytes  = 200 << 20
 	refreshTimeout = 30 * time.Second
 )
 
@@ -151,8 +154,18 @@ func run(ctx context.Context, rc runConfig) error {
 		})
 	go sub.Run(ctx)
 
+	var artSrc server.ArtSource
+	if res, err := art.NewResolver(art.Options{
+		Dir: filepath.Join(rc.DataDir, "art"), MaxBytes: artCacheBytes,
+		Known: cache.HasTrack, Restore: server.RestoreURL,
+	}); err != nil {
+		logger.Warn("artwork disabled", "err", err)
+	} else {
+		artSrc = res
+	}
+
 	h := server.New(server.Config{
-		Cache: cache, Runner: conn, Hub: hub,
+		Cache: cache, Runner: conn, Hub: hub, Art: artSrc,
 		Guard:   server.NewHostGuard(rc.AllowedHosts),
 		Limiter: server.NewLimiter(20, 40, time.Now), UI: webui.FS(), Logger: logger,
 	})

@@ -24,7 +24,9 @@ type Cache struct {
 	queue Queue
 	caps  json.RawMessage
 	plRev int64
-	rev   int64 // revision of the cached runtime snapshot; older ones are dropped
+	// paths of the tracks held in the queue and play-next rows, for HasTrack
+	queuePaths, nextPaths map[string]struct{}
+	rev                   int64 // revision of the cached runtime snapshot; older ones are dropped
 
 	online atomic.Bool
 }
@@ -211,6 +213,7 @@ func (c *Cache) AbsorbQueueResult(res json.RawMessage, revision int64) {
 	}
 	c.mu.Lock()
 	c.queue.Tracks = array
+	c.queuePaths = pathSet(array)
 	c.queue.Count = count
 	c.queue.Truncated = trunc
 	c.queue.PlaylistRevision = revision
@@ -228,6 +231,7 @@ func (c *Cache) AbsorbPlayNextResult(res json.RawMessage, revision int64) {
 	}
 	c.mu.Lock()
 	c.queue.PlayNext = array
+	c.nextPaths = pathSet(array)
 	if c.queue.PlaylistRevision == 0 {
 		c.queue.PlaylistRevision = revision
 	}
@@ -257,4 +261,49 @@ func (c *Cache) Caps() json.RawMessage {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.caps
+}
+
+// pathSet collects the "path" of every row in a JSON track array.
+func pathSet(rows json.RawMessage) map[string]struct{} {
+	var ts []struct {
+		Path string `json:"path"`
+	}
+	set := map[string]struct{}{}
+	if json.Unmarshal(rows, &ts) == nil {
+		for _, t := range ts {
+			if t.Path != "" {
+				set[t.Path] = struct{}{}
+			}
+		}
+	}
+	return set
+}
+
+// HasTrack reports whether path belongs to the playing track, the queue or the
+// play-next list. It is what lets the art route read local files without ever
+// being a way to read arbitrary ones.
+func (c *Cache) HasTrack(path string) bool {
+	if path == "" {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if _, ok := c.queuePaths[path]; ok {
+		return true
+	}
+	if _, ok := c.nextPaths[path]; ok {
+		return true
+	}
+	var st struct {
+		Track struct {
+			Path string `json:"path"`
+		} `json:"track"`
+		Logical struct {
+			Path string `json:"path"`
+		} `json:"logical_track"`
+	}
+	if json.Unmarshal(c.state, &st) != nil {
+		return false
+	}
+	return path == st.Track.Path || path == st.Logical.Path
 }

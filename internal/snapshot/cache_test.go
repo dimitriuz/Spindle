@@ -209,3 +209,26 @@ func TestQueueTruncatedWhenPlayerHoldsMore(t *testing.T) {
 		t.Fatalf("total 900 with 1 row must be flagged truncated: %+v", q)
 	}
 }
+
+func TestHasTrackCoversStateQueueAndPlayNext(t *testing.T) {
+	c := NewCache()
+	if c.HasTrack("/music/a.flac") || c.HasTrack("") {
+		t.Fatal("empty cache knows no tracks")
+	}
+	c.SetState(json.RawMessage(`{"revision":1,"track":{"path":"/music/now.flac"},"logical_track":{"path":"/music/logical.flac"}}`))
+	c.AbsorbQueueResult(json.RawMessage(`{"ok":true,"tracks":[{"path":"/music/q1.flac"},{"path":"/music/q2.flac"}]}`), 1)
+	c.AbsorbPlayNextResult(json.RawMessage(`{"ok":true,"tracks":[{"path":"/music/next.flac"}]}`), 1)
+	for _, p := range []string{"/music/now.flac", "/music/logical.flac", "/music/q1.flac", "/music/q2.flac", "/music/next.flac"} {
+		if !c.HasTrack(p) {
+			t.Fatalf("%s should be known", p)
+		}
+	}
+	if c.HasTrack("/etc/passwd") {
+		t.Fatal("unlisted path must be unknown")
+	}
+	// the sets follow the rows: a replaced queue forgets the old tracks
+	c.AbsorbQueueResult(json.RawMessage(`{"ok":true,"tracks":[{"path":"/music/q3.flac"}]}`), 2)
+	if c.HasTrack("/music/q1.flac") || !c.HasTrack("/music/q3.flac") {
+		t.Fatal("queue replacement must replace the known set")
+	}
+}
