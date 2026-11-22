@@ -121,10 +121,45 @@ input[type=range] { flex: 1; height: 44px; background: transparent; accent-color
 #now.fs[data-art=both] .cover { width: auto; aspect-ratio: auto; overflow: visible; display: flex; justify-content: center; gap: 28px; cursor: default; }
 #now.fs[data-art=both] .cover::after { display: none; }
 #now.fs[data-art=both] #art-cover, #now.fs[data-art=both] .cover .ph, #now.fs[data-art=both] .disc-slide { position: relative; inset: auto; width: var(--s); height: var(--s); flex: none; }
+/* Big screens (desktop, TV): art on the left, large left-aligned text on the right, sized in vw so it reads across a room */
+@media (min-width: 1100px) and (min-height: 540px) and (min-aspect-ratio: 5/4) {
+  #now.fs { padding: 3vh 3vw; --s: min(62vh, 30vw); }
+  #now.fs[data-art=both] { --s: min(50vh, 23vw); }
+  #now.fs #player { max-width: none; display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: center; align-items: center; column-gap: 4vw; row-gap: 2vh; }
+  #now.fs .cover { grid-column: 1; grid-row: 1 / span 7; align-self: center; }
+  #now.fs .meta > *, #now.fs .seek, #now.fs .tech, #now.fs .next, #now.fs .transport { grid-column: 2; min-width: 0; text-align: left; }
+  #now.fs .titlerow { grid-row: 1; }
+  #now.fs .artist-line { grid-row: 2; }
+  #now.fs #album { grid-row: 3; }
+  #now.fs .seek { grid-row: 4; font-size: clamp(16px, 1.5vw, 32px); gap: 1.2vw; margin-top: 1vh; }
+  #now.fs .seek span { min-width: 3.4vw; }
+  #now.fs .tech { grid-row: 5; }
+  #now.fs .next { grid-row: 6; }
+  #now.fs .transport { grid-row: 7; justify-content: flex-start; gap: 2vw; }
+  #now.fs .meta .titlerow, #now.fs .meta .artist-line { justify-content: flex-start; }
+  #now.fs .meta h1 { font-size: clamp(34px, 3.6vw, 84px); line-height: 1.15; }
+  #now.fs .artist-line { font-size: clamp(22px, 2.2vw, 52px); display: flex; align-items: center; gap: 1vw; }
+  #now.fs .avatar { width: clamp(44px, 3.6vw, 84px); height: clamp(44px, 3.6vw, 84px); }
+  #now.fs #album { font-size: clamp(18px, 1.7vw, 40px); }
+  #now.fs .tech { text-align: left; font-size: clamp(16px, 1.5vw, 34px); margin-top: 0; color: var(--text); opacity: .75; }
+  #now.fs .next { text-align: left; font-size: clamp(16px, 1.5vw, 34px); }
+  #now.fs #bar { height: 5vh; min-height: 44px; }
+  #now.fs #bar .track { height: .7vh; min-height: 6px; margin-top: calc(-.35vh); }
+  #now.fs #knob { width: 1.6vh; height: 1.6vh; min-width: 16px; min-height: 16px; margin: -.8vh 0 0 -.8vh; }
+  #now.fs .transport .ic { width: 5vw; height: 5vw; max-width: 110px; max-height: 110px; }
+  #now.fs .transport .ic svg { width: 50%; height: 50%; }
+  #now.fs .transport .ic.big { width: 7vw; height: 7vw; max-width: 150px; max-height: 150px; }
+  #now.fs .heart svg { width: clamp(26px, 2.2vw, 52px); height: clamp(26px, 2.2vw, 52px); }
+}
 @media (max-height: 480px) {
   #now.fs .transport, #now.fs .next { display: none; }
   #now.fs #player { gap: 6px; }
 }
+
+/* Fullscreen: controls fade out when nobody is touching anything */
+#now.fs .transport, #now.fs .fs-close, #now.fs .heart { transition: opacity .4s; }
+#now.fs.fs-idle .transport, #now.fs.fs-idle .fs-close, #now.fs.fs-idle .heart { opacity: 0; pointer-events: none; }
+#now.fs.fs-idle { cursor: none; }
 
 /* Favorites */
 .heart { color: var(--dim); flex: none; }

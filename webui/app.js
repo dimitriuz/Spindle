@@ -498,7 +498,7 @@ if (typeof document !== 'undefined') (function () {
   // The platter keeps turning (or coasting) whichever side is showing, like
   // the real thing; `art` holds its state between animation frames.
   const art = { path: null, seq: 0, coverOk: false, disc: false, showDisc: false, flipping: false,
-    angle: 0, w: 0, a: 0, target: 0, k: 2.2, last: 0, raf: 0, info: null, pref: false,
+    angle: 0, w: 0, a: 0, target: 0, k: 2.2, last: 0, raf: 0, info: null, infoTry: 0, infoDur: -1, infoAt: 0, infoBusy: false, pref: false,
     albumKey: '', idx: null, chain: Promise.resolve(), swapping: false,
     discPending: false }; // true from a track change until the disc of the new album has replaced the old one
   try { art.pref = sessionStorage.getItem('cliamp-disc') === '1'; } catch (e) { /* storage may be off */ }
@@ -643,10 +643,27 @@ if (typeof document !== 'undefined') (function () {
       // same album, same pictures: the platter just stumbles and recovers
       art.w = skipDip(art.w); art.a = 0; setSpin('playing');
     }
+    art.info = null; art.infoTry = 0; art.infoDur = -1; art.infoBusy = false;
+    loadInfo();
+  }
+  // The tech line comes from the bridge, which needs the track to be known and
+  // (for MP3 and the like) the duration. Both may be missing right after a
+  // track change, so ask again when the duration shows up or after a failure.
+  function loadInfo() {
+    const p = art.path, seq = art.seq;
+    if (!p || art.infoBusy) return;
     const dur = Number(S.state && S.state.duration) || 0;
+    art.infoBusy = true; art.infoDur = dur; art.infoAt = Date.now(); art.infoTry++;
     api.get('/api/trackinfo?path=' + encodeURIComponent(p) + (dur ? '&duration=' + dur : ''))
       .then((info) => { if (seq === art.seq) { art.info = info; renderTech(); } })
-      .catch(() => { if (seq === art.seq) { art.info = null; renderTech(); } });
+      .catch(() => { if (seq === art.seq && !art.info) renderTech(); })
+      .then(() => { if (seq === art.seq) art.infoBusy = false; });
+  }
+  function refreshInfo() {
+    if (!art.path || art.infoBusy) return;
+    const dur = Number(S.state && S.state.duration) || 0;
+    if (dur > 0 && art.infoDur === 0) loadInfo();
+    else if (!art.info && art.infoTry < 4 && Date.now() - art.infoAt > 2500) loadInfo();
   }
   async function flipDisc() {
     if (!art.disc || art.flipping || fsBoth()) return;
@@ -697,9 +714,10 @@ if (typeof document !== 'undefined') (function () {
   function setFs(on) {
     if (on === fsOn()) return;
     $('now').classList.toggle('fs', on);
+    if (on) fsWake(); else { clearTimeout(fsIdleTimer); $('now').classList.remove('fs-idle'); }
     document.body.classList.toggle('fs-open', on);
     if (on) {
-      layoutFs();
+      layoutFs(); art.infoTry = Math.min(art.infoTry, 2); refreshInfo();
       try { const r = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* not available */ }
     } else {
       delete $('now').dataset.art;
@@ -707,7 +725,28 @@ if (typeof document !== 'undefined') (function () {
     }
     paintArt();
   }
+  // Controls hide after a few quiet seconds and return on mouse, touch, key or gamepad input.
+  const FS_IDLE_MS = 3500;
+  let fsIdleTimer = 0, padSig = '';
+  function fsWake() {
+    $('now').classList.remove('fs-idle');
+    clearTimeout(fsIdleTimer);
+    if (fsOn()) fsIdleTimer = setTimeout(() => { if (fsOn()) $('now').classList.add('fs-idle'); }, FS_IDLE_MS);
+  }
+  function pollPads() {
+    if (!fsOn() || typeof navigator.getGamepads !== 'function') return;
+    let sig = '';
+    try {
+      for (const p of navigator.getGamepads() || []) {
+        if (p) sig += p.buttons.map((b) => (b.pressed ? 1 : 0)).join('') + p.axes.map((a) => (Math.abs(a) > 0.3 ? Math.sign(a) : 0)).join(',') + ';';
+      }
+    } catch (e) { return; }
+    if (sig !== padSig && /[1-9-]/.test(sig)) fsWake();
+    padSig = sig;
+  }
   function wireFs() {
+    for (const ev of ['mousemove', 'pointerdown', 'touchstart', 'keydown', 'wheel']) addEventListener(ev, () => { if (fsOn()) fsWake(); }, { passive: true });
+    setInterval(pollPads, 200);
     $('b-fs').onclick = () => setFs(true);
     $('b-fs-close').onclick = () => setFs(false);
     addEventListener('resize', layoutFs);
@@ -738,7 +777,7 @@ if (typeof document !== 'undefined') (function () {
       $('trackno').textContent = song.track_number ? String(song.track_number).padStart(2, '0') + ' · ' : '';
       $('titletext').textContent = song.title || '';
       $('artist').textContent = song.artist || '';
-      updateArt(song);
+      updateArt(song); refreshInfo();
       $('album').textContent = [song.album, song.year].filter(Boolean).join(' · ');
       $('dur').textContent = fmtTime(st.duration);
       $('bar').setAttribute('aria-valuemax', Math.round(Number(st.duration) || 0));
