@@ -271,10 +271,13 @@ Themes are plain data in `webui/themes.js`, icon sets in `webui/icons.js`, and t
 <details>
 <summary>HTTP API (for scripts)</summary>
 
+The full reference, with the WebSocket protocol, the compact list shape (`?compact=1`), picture sizes (`?size=N`) and notes for building a small-device remote, is in [docs/api.md](docs/api.md).
+
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/state`, `/api/queue`, `/api/capabilities`, `/api/about` | player state, queue, cliamp's operations, bridge information |
 | `GET /api/events` | event stream: `state`, `playback`, `playlist`, `job`, `player`, `favorites`, `enqueue`, `resync`, `ping` |
+| `GET /api/ws` | WebSocket with compact `status` and `queue` frames, for devices without a browser |
 | `POST /api/command` | `{"op": "...", "params": {...}}` for the allowed operations |
 | `GET /api/library/providers`, `/api/library/{provider}/{playlists\|albums\|artists\|catalog}` | browsing (`offset`, `limit`, albums also `sort`) |
 | `GET /api/library/{provider}/{album\|artist\|playlist}/{id}/tracks`, `.../artist/{id}/albums` | drill-down |

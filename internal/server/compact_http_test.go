@@ -126,3 +126,18 @@ func TestProvidersNeverCompact(t *testing.T) {
 		t.Fatalf("providers must stay as is: %s", rec.Body)
 	}
 }
+
+// The provider does not echo paging; a device pages by what it asked for.
+func TestLibraryCompactEchoesRequestedPaging(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"total":9,"albums":[{"id":"a","name":"A"}]}`)}}
+	h := New(libConfig(t, fr))
+	o := decodeCompact(t, json.RawMessage(libGet(t, h, "/api/library/navidrome/albums?compact=1&offset=4&limit=2").Body.Bytes()))
+	if o.Offset != 4 || o.Limit != 2 || o.Total != 9 {
+		t.Fatalf("paging: %+v", o)
+	}
+	// defaults when the caller says nothing
+	o = decodeCompact(t, json.RawMessage(libGet(t, h, "/api/library/navidrome/playlists?compact=1").Body.Bytes()))
+	if o.Offset != 0 || o.Limit != defaultLimit {
+		t.Fatalf("defaults: %+v", o)
+	}
+}

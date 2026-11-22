@@ -27,7 +27,7 @@ func decodeCompact(t *testing.T, raw json.RawMessage) compactOut {
 
 func TestCompactAlbums(t *testing.T) {
 	in := json.RawMessage(`{"ok":true,"total":3,"offset":0,"limit":50,"albums":[{"id":"al1","name":"Album One","artist":"Artist A","year":1999,"track_count":7}]}`)
-	out, err := compactList("album", in)
+	out, err := compactList("album", in, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestCompactAlbums(t *testing.T) {
 
 func TestCompactArtists(t *testing.T) {
 	in := json.RawMessage(`{"ok":true,"total":2,"artists":[{"id":"ar1","name":"A","album_count":2},{"id":"ar2","name":"B","album_count":1}]}`)
-	out, err := compactList("artist", in)
+	out, err := compactList("artist", in, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestCompactArtists(t *testing.T) {
 
 func TestCompactPlaylistsAndStation(t *testing.T) {
 	in := json.RawMessage(`{"ok":true,"total":1,"playlists":[{"id":"c:0","name":"Station Zero","provider":"radio"}]}`)
-	out, err := compactList("station", in)
+	out, err := compactList("station", in, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestCompactPlaylistsAndStation(t *testing.T) {
 	if it["kind"] != "station" || it["subtitle"] != "" || it["title"] != "Station Zero" {
 		t.Fatalf("station: %v", it)
 	}
-	out, _ = compactList("playlist", json.RawMessage(`{"playlists":[{"id":"pl1","name":"P","track_count":12}]}`))
+	out, _ = compactList("playlist", json.RawMessage(`{"playlists":[{"id":"pl1","name":"P","track_count":12}]}`), 0, 0)
 	it = decodeCompact(t, out).Items[0]
 	if it["kind"] != "playlist" || it["subtitle"] != "12 tracks" {
 		t.Fatalf("playlist: %v", it)
@@ -75,7 +75,7 @@ func TestCompactPlaylistsAndStation(t *testing.T) {
 
 func TestCompactTracks(t *testing.T) {
 	in := json.RawMessage(`{"ok":true,"total":1,"tracks":[{"title":"T","artist":"Artist A","path":"/fake/a1-0.flac","duration_secs":180}]}`)
-	out, err := compactList("track", in)
+	out, err := compactList("track", in, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestCompactTracks(t *testing.T) {
 }
 
 func TestCompactMissingFields(t *testing.T) {
-	out, err := compactList("album", json.RawMessage(`{"albums":[{"id":"x"}]}`))
+	out, err := compactList("album", json.RawMessage(`{"albums":[{"id":"x"}]}`), 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestCompactMissingFields(t *testing.T) {
 }
 
 func TestCompactEmptyIsEmptyArray(t *testing.T) {
-	out, err := compactList("album", json.RawMessage(`{"ok":true,"total":0}`))
+	out, err := compactList("album", json.RawMessage(`{"ok":true,"total":0}`), 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

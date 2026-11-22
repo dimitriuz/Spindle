@@ -61,8 +61,10 @@ func (r compactRow) item(hint string) CompactItem {
 }
 
 // compactList turns a provider listing into {"items","total","offset","limit"}.
-// hint is album, artist, playlist, track or station.
-func compactList(hint string, raw json.RawMessage) (json.RawMessage, error) {
+// hint is album, artist, playlist, track or station. Providers do not echo
+// the paging, so offset and limit are what the caller asked for unless the
+// result carries its own.
+func compactList(hint string, raw json.RawMessage, offset, limit int) (json.RawMessage, error) {
 	var res map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &res); err != nil {
 		return nil, err
@@ -92,8 +94,8 @@ func compactList(hint string, raw json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(map[string]any{
 		"items":  items,
 		"total":  num("total", len(items)),
-		"offset": num("offset", 0),
-		"limit":  num("limit", 0),
+		"offset": num("offset", offset),
+		"limit":  num("limit", limit),
 	})
 }
 

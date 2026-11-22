@@ -58,7 +58,9 @@ func (s *serverState) libraryGET(w http.ResponseWriter, r *http.Request, cache *
 	key := r.URL.Path + "?" + r.URL.RawQuery
 	respond := func(body json.RawMessage) {
 		if hint != "" && wantCompact(r) {
-			c, err := compactList(hint, body)
+			offset, _ := params["offset"].(int)
+			limit, _ := params["limit"].(int)
+			c, err := compactList(hint, body, offset, limit)
 			if err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error", "code": "internal_error"})
 				return
