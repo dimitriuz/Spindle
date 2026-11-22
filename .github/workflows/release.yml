@@ -9,15 +9,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.23" }
-      - env: { CGO_ENABLED: "0" }
-        run: |
-          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/cliamp-web-linux-amd64 ./cmd/cliamp-web
-          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/cliamp-web-linux-arm64 ./cmd/cliamp-web
-      - run: cd dist && sha256sum cliamp-web-linux-* > sha256sums.txt
+        with: { go-version-file: go.mod }
+      - run: make release
+      - run: cp web.lua dist/release/web.lua && cd dist/release && sha256sum cliamp-web-* web.lua > sha256sums.txt
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/cliamp-web-linux-amd64
-            dist/cliamp-web-linux-arm64
-            dist/sha256sums.txt
+          files: dist/release/*

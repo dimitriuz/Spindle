@@ -1,4 +1,4 @@
--- cliamp-plugin-web: LAN web remote. Spawns and supervises cliamp-web.
+-- Spindle: web remote for cliamp. Spawns and supervises the cliamp-web bridge.
 local p = plugin.register({
     name        = "web",
     type        = "hook",

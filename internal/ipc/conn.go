@@ -200,7 +200,7 @@ func (c *Conn) loop() {
 		st := &connState{nc: nc, pend: map[string]chan *Response{}, wmu: make(chan struct{}, 1)}
 		if fi, err := os.Stat(c.socket); err == nil {
 			if sa, ok := fi.Sys().(*syscall.Stat_t); ok {
-				st.dev, st.ino = sa.Dev, sa.Ino
+				st.dev, st.ino = uint64(sa.Dev), uint64(sa.Ino)
 			}
 		}
 		c.mu.Lock()
@@ -479,7 +479,7 @@ func (c *Conn) stale(st *connState) bool {
 		return true
 	}
 	sa, ok := fi.Sys().(*syscall.Stat_t)
-	return ok && (sa.Dev != st.dev || sa.Ino != st.ino)
+	return ok && (uint64(sa.Dev) != st.dev || uint64(sa.Ino) != st.ino)
 }
 
 func (c *Conn) Close() {

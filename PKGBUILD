@@ -1,22 +1,22 @@
-# Maintainer: Dmitrii Leshchenko <dmitrii@example.com>
+# Maintainer: Dmitrii Leshchenko (github.com/dimitriuz)
 pkgname=cliamp-web
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="LAN web remote bridge for cliamp"
+pkgdesc="Spindle: web remote and library browser for cliamp (the cliamp-web bridge)"
 arch=(x86_64 aarch64)
 license=(MIT)
 makedepends=(go)
-source=("git+https://github.com/<user>/cliamp-plugin-web#tag=v$pkgver")
+source=("git+https://github.com/dimitriuz/Spindle#tag=v$pkgver")
 sha256sums=("SKIP")
 prepare() {
-  cd cliamp-plugin-web
+  cd Spindle
   go mod download
 }
 build() {
-  cd cliamp-plugin-web
+  cd Spindle
   make build
 }
 package() {
-  install -Dm755 cliamp-plugin-web/dist/cliamp-web "$pkgdir/usr/bin/cliamp-web"
-  install -Dm644 cliamp-plugin-web/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm755 Spindle/dist/cliamp-web "$pkgdir/usr/bin/cliamp-web"
+  install -Dm644 Spindle/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

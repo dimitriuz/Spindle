@@ -95,6 +95,7 @@ Spindle, Minimal, Hi-Fi, Walkman, Winamp, Neon, OLED black, Vinyl lounge, 8-bit,
 
 - [cliamp](https://github.com/bjarneo/cliamp) with the V2 IPC, tested with **v2.4.0** (the Lua plugin runs in the TUI, and in `--daemon` mode from v2.2). In daemon mode cliamp does not offer terminal theme and visualizer changes, which Spindle does not use.
 - To build: Go 1.23 or newer. Nothing else: no Node, no bundler.
+- Linux (x86-64, ARM64, ARMv7) or macOS for the bridge (`make release` builds all of them). Windows is not supported yet: the bridge's socket check uses Unix-only calls.
 - A browser with ES2020 and SSE, which means any current phone, tablet or desktop browser.
 - Optional: a Navidrome server configured in cliamp (for covers by id and the Folder filter you need the music folder reachable from the machine running the bridge).
 
@@ -104,10 +105,10 @@ The usual setup is **the web.lua plugin starts the bridge whenever cliamp starts
 
 ### 1. Get the binary
 
-Build it (any machine with Go; add `GOOS`/`GOARCH` to cross-compile):
+Tagged releases on GitHub carry ready binaries (Linux x86-64, ARM64 and ARMv7, macOS) with checksums, plus `web.lua`. Or build it yourself (any machine with Go; add `GOOS`/`GOARCH` to cross-compile):
 
 ```sh
-git clone <this repository> spindle && cd spindle
+git clone https://github.com/dimitriuz/Spindle.git && cd Spindle
 make build                       # -> dist/cliamp-web
 sudo install -m755 dist/cliamp-web /usr/local/bin/cliamp-web
 ```
@@ -129,7 +130,7 @@ mkdir -p ~/.config/cliamp/plugins
 cp web.lua ~/.config/cliamp/plugins/web.lua
 ```
 
-(Once the repository is published you can use `cliamp plugins install <user>/cliamp-plugin-web` instead.)
+(cliamp may also install it with `cliamp plugins install dimitriuz/Spindle`; this is untested.)
 
 ### 3. Allow it and trust it
 
@@ -151,7 +152,7 @@ Then, once: `cliamp plugins trust web`.
 Start cliamp. It shows the address, or read it from the status file:
 
 ```sh
-jq -r .url ~/.local/share/cliamp/web/status.json     # e.g. http://192.168.1.48:8730
+jq -r .url ~/.local/share/cliamp/web/status.json     # e.g. http://192.168.1.20:8730
 ```
 
 Open that address on your phone or computer. Add it to the home screen if you like.
@@ -206,13 +207,13 @@ The bridge accepts any `Host`, so a proxy just works. The event stream must not 
 
 ```
 spindle.example.lan {
-    reverse_proxy 192.168.1.48:8730
+    reverse_proxy 192.168.1.20:8730
 }
 ```
 
 ## Installing as an app and notifications
 
-Browsers only offer to install a web app, and only allow notifications, on a **secure address**: `https://…`, or `http://localhost`. A plain `http://192.168.1.48:8730` address works for everything else but not for these two. Put Spindle behind an HTTPS reverse proxy (see above), then open it through that address. Settings → App tells you what is missing.
+Browsers only offer to install a web app, and only allow notifications, on a **secure address**: `https://…`, or `http://localhost`. A plain `http://192.168.1.20:8730` address works for everything else but not for these two. Put Spindle behind an HTTPS reverse proxy (see above), then open it through that address. Settings → App tells you what is missing.
 
 **Install**
 - Chrome, Edge and other Chromium browsers (desktop and Android): Settings → App → **Install**, or the install icon in the address bar.

@@ -1,17 +1,23 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 jobs:
-  go:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.23" }
-      - run: go vet ./... && go test ./...
-  ui:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+        with:
+          go-version-file: go.mod
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: node webui/app_test.js
+        with:
+          node-version: 22
+      - name: vet, test (race) and page tests
+        run: |
+          go vet ./...
+          go test -race ./...
+          node webui/app_test.js
+      - name: release builds compile
+        run: make release
