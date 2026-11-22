@@ -1,5 +1,5 @@
 'use strict';
-// The cliamp-web page, ported from the MiSTer Subsonic web remote: same
+// The Spindle page, ported from the MiSTer Subsonic web remote: same
 // shape (pure testable core, one EventSource with backoff and a watchdog,
 // hash routing, imperative rows). The data layer is the cliamp bridge:
 // snapshot state, {op, params} commands, library lists.
@@ -2149,7 +2149,7 @@ if (typeof document !== 'undefined') (function () {
         setRow('Radio directory', h('span', { class: 'dim' }, ab.features && ab.features.radio_directory ? 'radio-browser.info' : 'off'), 'Station logos, details and search'));
       const used = b.art_cache_bytes || 0, max = b.art_cache_max || 0;
       about.replaceChildren(
-        setRow('Spindle', h('span', null, (ab.commit ? ab.commit : 'dev') + (ab.modified ? ' +local changes' : '')), 'bridge cliamp-web' + (ab.built ? ', built ' + new Date(ab.built).toLocaleString() : '')),
+        setRow('Spindle', h('span', null, (ab.commit ? ab.commit : 'dev') + (ab.modified ? ' +local changes' : '')), (ab.built ? 'built ' + new Date(ab.built).toLocaleString() : '')),
         setRow('Bridge', h('span', { class: 'dim' }, (b.listen || '') + (b.lan ? ' · reachable on the network' : ' · this machine only')), ab.go + ' · ' + ab.os),
         setRow('Running for', h('span', { class: 'dim' }, fmtUptime(ab.uptime))),
         setRow('Browsers connected', h('span', { class: 'dim' }, String(ab.clients == null ? '–' : ab.clients))),

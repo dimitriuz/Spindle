@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"cliamp-web/internal/ipc"
-	"cliamp-web/internal/snapshot"
+	"spindle/internal/ipc"
+	"spindle/internal/snapshot"
 )
 
 type Config struct {

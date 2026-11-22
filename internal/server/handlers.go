@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 // writeTimeout bounds one SSE write.

@@ -2,11 +2,11 @@ package art
 
 import (
 	"bytes"
-	"cliamp-web/internal/files"
 	"context"
 	"errors"
 	"net/http"
 	"path/filepath"
+	"spindle/internal/files"
 	"testing"
 )
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 const (

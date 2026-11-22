@@ -19,9 +19,9 @@ import (
 	"sync"
 	"time"
 
-	"cliamp-web/internal/cliamp"
-	"cliamp-web/internal/files"
-	"cliamp-web/internal/ipc"
+	"spindle/internal/cliamp"
+	"spindle/internal/files"
+	"spindle/internal/ipc"
 )
 
 var (

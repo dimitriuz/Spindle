@@ -17,14 +17,14 @@ import (
 	"syscall"
 	"time"
 
-	"cliamp-web/internal/art"
-	"cliamp-web/internal/enqueue"
-	"cliamp-web/internal/favorites"
-	"cliamp-web/internal/files"
-	"cliamp-web/internal/ipc"
-	"cliamp-web/internal/server"
-	"cliamp-web/internal/snapshot"
-	"cliamp-web/webui"
+	"spindle/internal/art"
+	"spindle/internal/enqueue"
+	"spindle/internal/favorites"
+	"spindle/internal/files"
+	"spindle/internal/ipc"
+	"spindle/internal/server"
+	"spindle/internal/snapshot"
+	"spindle/webui"
 )
 
 const (
@@ -237,7 +237,7 @@ func run(ctx context.Context, rc runConfig) error {
 			errCh <- err
 		}
 	}()
-	logger.Info("cliamp-web serving", "addr", addr, "socket", rc.Socket)
+	logger.Info("spindle serving", "addr", addr, "socket", rc.Socket)
 
 	select {
 	case <-ctx.Done():
@@ -279,14 +279,14 @@ func defaultSocket() string { return configDir() + "/cliamp/cliamp.sock" }
 
 func defaultDataDir() string {
 	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
-		return d + "/cliamp/web"
+		return d + "/cliamp/spindle"
 	}
-	return os.Getenv("HOME") + "/.local/share/cliamp/web"
+	return os.Getenv("HOME") + "/.local/share/cliamp/spindle"
 }
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "serve" {
-		fmt.Fprintln(os.Stderr, "usage: cliamp-web serve [--port N] [--bind ADDR] [--lan] [--socket PATH] [--data-dir DIR] [--allowed-hosts LIST] [--music-dir DIR] [--verbose]")
+		fmt.Fprintln(os.Stderr, "usage: spindle serve [--port N] [--bind ADDR] [--lan] [--socket PATH] [--data-dir DIR] [--allowed-hosts LIST] [--music-dir DIR] [--verbose]")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)

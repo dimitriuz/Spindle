@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"cliamp-web/internal/cliamp"
-	"cliamp-web/internal/ipc"
+	"spindle/internal/cliamp"
+	"spindle/internal/ipc"
 )
 
 type Kind string

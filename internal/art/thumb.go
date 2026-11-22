@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"cliamp-web/internal/files"
+	"spindle/internal/files"
 )
 
 // maxPixels bounds what Thumb will decode: a tiny file can claim enormous

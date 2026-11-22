@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 // QueueCap bounds the cached live playlist; beyond it the UI gets the first

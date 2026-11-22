@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"cliamp-web/internal/files"
+	"spindle/internal/files"
 )
 
 // FilesSource is the music folder; *files.Browser is the real one.

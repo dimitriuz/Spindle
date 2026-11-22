@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"cliamp-web/internal/art"
+	"spindle/internal/art"
 )
 
 // ArtSource finds a picture for a track; *art.Resolver is the real one.

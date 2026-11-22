@@ -13,17 +13,17 @@
   <img src="docs/screenshots/now-playing-desktop.jpg" alt="Spindle on a desktop browser: Now Playing on the left, the queue on the right">
 </p>
 
-Spindle is a small Go program (the *bridge*, binary name `cliamp-web`) plus a
+Spindle is a small Go program (the *bridge*, binary name `spindle`) plus a
 self-contained web page it serves. The bridge talks to cliamp over its local
 IPC socket, so the page stays in step with the terminal player in both
 directions. There is no login and no JavaScript toolchain: the page is plain
 HTML, CSS and JS embedded in the binary.
 
 ```
-browser ──HTTP / SSE──▶ cliamp-web (the bridge, default port 8730)
+browser ──HTTP / SSE──▶ spindle (the bridge, default port 8730)
                             │  cliamp.sock  (cliamp V2 IPC)
                             ▼
-                          cliamp  ◀── web.lua plugin starts and supervises the bridge
+                          cliamp  ◀── spindle.lua plugin starts and supervises the bridge
 ```
 
 ## Screenshots
@@ -101,24 +101,24 @@ Spindle, Minimal, Hi-Fi, Walkman, Winamp, Neon, OLED black, Vinyl lounge, 8-bit,
 
 ## Install
 
-The usual setup is **the web.lua plugin starts the bridge whenever cliamp starts**. You need the `cliamp-web` binary and the plugin file.
+The usual setup is **the spindle.lua plugin starts the bridge whenever cliamp starts**. You need the `spindle` binary and the plugin file.
 
 ### 1. Get the binary
 
-Tagged releases on GitHub carry ready binaries (Linux x86-64, ARM64 and ARMv7, macOS) with checksums, plus `web.lua`. Or build it yourself (any machine with Go; add `GOOS`/`GOARCH` to cross-compile):
+Tagged releases on GitHub carry ready binaries (Linux x86-64, ARM64 and ARMv7, macOS) with checksums, plus `spindle.lua`. Or build it yourself (any machine with Go; add `GOOS`/`GOARCH` to cross-compile):
 
 ```sh
 git clone https://github.com/dimitriuz/Spindle.git && cd Spindle
-make build                       # -> dist/cliamp-web
-sudo install -m755 dist/cliamp-web /usr/local/bin/cliamp-web
+make build                       # -> dist/spindle
+sudo install -m755 dist/spindle /usr/local/bin/spindle
 ```
 
 For a Raspberry Pi (64-bit OS) build on your computer and copy it over:
 
 ```sh
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o cliamp-web ./cmd/cliamp-web
-scp cliamp-web pi@raspberrypi.local:/tmp/
-ssh pi@raspberrypi.local 'sudo install -m755 /tmp/cliamp-web /usr/local/bin/cliamp-web'
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o spindle ./cmd/spindle
+scp spindle pi@raspberrypi.local:/tmp/
+ssh pi@raspberrypi.local 'sudo install -m755 /tmp/spindle /usr/local/bin/spindle'
 ```
 
 On Arch Linux there is a `PKGBUILD` in the repository (`makepkg -si`).
@@ -127,7 +127,7 @@ On Arch Linux there is a `PKGBUILD` in the repository (`makepkg -si`).
 
 ```sh
 mkdir -p ~/.config/cliamp/plugins
-cp web.lua ~/.config/cliamp/plugins/web.lua
+cp spindle.lua ~/.config/cliamp/plugins/spindle.lua
 ```
 
 (cliamp may also install it with `cliamp plugins install dimitriuz/Spindle`; this is untested.)
@@ -138,21 +138,21 @@ Edit `~/.config/cliamp/config.toml`:
 
 ```toml
 [plugins]
-allowed_binaries = "cliamp-web"
+allowed_binaries = "spindle"
 
-[plugins.web]
+[plugins.spindle]
 port = 8730      # default
 lan  = true      # listen on the network; false = this machine only
 ```
 
-Then, once: `cliamp plugins trust web`.
+Then, once: `cliamp plugins trust spindle`.
 
 ### 4. Start cliamp and open the page
 
 Start cliamp. It shows the address, or read it from the status file:
 
 ```sh
-jq -r .url ~/.local/share/cliamp/web/status.json     # e.g. http://192.168.1.20:8730
+jq -r .url ~/.local/share/cliamp/spindle/status.json     # e.g. http://192.168.1.20:8730
 ```
 
 Open that address on your phone or computer. Add it to the home screen if you like.
@@ -181,13 +181,13 @@ loginctl enable-linger "$USER"          # keep it running without a login sessio
 
 Two things worth knowing:
 
-- Restarting cliamp itself clears its live queue (cliamp does not save it). To update the bridge, replace the binary and stop only the bridge: `sudo install -m755 cliamp-web /usr/local/bin/cliamp-web; pkill -x cliamp-web`. The plugin starts it again within seconds with the new binary and the queue is untouched.
-- The plugin restarts a crashed bridge at most three times per cliamp session (it forgives earlier crashes after a minute of stable running). If you kill the bridge repeatedly while testing, it stops restarting; start it by hand (`cliamp-web serve --lan &`) or restart cliamp.
+- Restarting cliamp itself clears its live queue (cliamp does not save it). To update the bridge, replace the binary and stop only the bridge: `sudo install -m755 spindle /usr/local/bin/spindle; pkill -x spindle`. The plugin starts it again within seconds with the new binary and the queue is untouched.
+- The plugin restarts a crashed bridge at most three times per cliamp session (it forgives earlier crashes after a minute of stable running). If you kill the bridge repeatedly while testing, it stops restarting; start it by hand (`spindle serve --lan &`) or restart cliamp.
 
 ### Running the bridge without the plugin
 
 ```sh
-cliamp-web serve --lan
+spindle serve --lan
 ```
 
 | Flag | Default | Meaning |
@@ -195,7 +195,7 @@ cliamp-web serve --lan
 | `--port N` | `8730` | HTTP port |
 | `--lan` | off | listen on all interfaces (`--bind ADDR` picks one) |
 | `--socket PATH` | `~/.config/cliamp/cliamp.sock` | cliamp's IPC socket |
-| `--data-dir DIR` | `~/.local/share/cliamp/web` | status file and the picture cache |
+| `--data-dir DIR` | `~/.local/share/cliamp/spindle` | status file and the picture cache |
 | `--music-dir DIR` | cliamp's `initial_directory`, else `~/Music` | root of the file browser |
 | `--verbose` | off | log to stderr |
 
@@ -305,11 +305,11 @@ Outside services: radio station names and stream addresses are sent to the publi
 ## Development
 
 ```sh
-make build     # dist/cliamp-web (embeds webui/, no JS toolchain)
+make build     # dist/spindle (embeds webui/, no JS toolchain)
 make test      # go vet + go test + node webui/app_test.js
 ```
 
-- `cmd/cliamp-web`: the program; `internal/`: IPC, snapshot cache, HTTP server, art, files, favorites, enqueue worker; `webui/`: the page (`index.html`, `app.css`, `app.js`, `themes.js`, `icons.js`, the service worker `sw.js`, icons and manifest); `web.lua`: the supervisor plugin.
+- `cmd/spindle`: the program; `internal/`: IPC, snapshot cache, HTTP server, art, files, favorites, enqueue worker; `webui/`: the page (`index.html`, `app.css`, `app.js`, `themes.js`, `icons.js`, the service worker `sw.js`, icons and manifest); `spindle.lua`: the supervisor plugin.
 - The pure half of the page (list sorting, menus, themes, formatting) is tested in plain Node: `node webui/app_test.js`.
 - After changing `webui/`, rebuild the binary (the files are embedded) and hard-reload the page.
 - Screenshots in this README were taken with headless Chrome against a real player.

@@ -1,17 +1,17 @@
 package enqueue
 
 import (
-	"cliamp-web/internal/files"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"spindle/internal/files"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 // fakeCliamp records every call in order and serves paged listings.

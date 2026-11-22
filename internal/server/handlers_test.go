@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"cliamp-web/internal/ipc"
-	"cliamp-web/internal/snapshot"
+	"spindle/internal/ipc"
+	"spindle/internal/snapshot"
 )
 
 func testConfig(t *testing.T) Config {
@@ -306,7 +306,7 @@ func TestAboutReportsBridgeStateWithoutPathsOrLogins(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := got["bridge"].(map[string]any)
-	if got["name"] != "cliamp-web" || got["clients"] != float64(1) || b["listen"] != "0.0.0.0:8730" || b["art_cache_bytes"] != float64(1234) || b["navidrome"] != true {
+	if got["name"] != "spindle" || got["clients"] != float64(1) || b["listen"] != "0.0.0.0:8730" || b["art_cache_bytes"] != float64(1234) || b["navidrome"] != true {
 		t.Fatalf("%v", got)
 	}
 	if _, ok := got["player"].(map[string]any)["online"]; !ok {

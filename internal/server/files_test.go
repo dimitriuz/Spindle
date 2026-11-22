@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"cliamp-web/internal/files"
+	"spindle/internal/files"
 )
 
 type fakeFiles struct {

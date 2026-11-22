@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"cliamp-web/internal/favorites"
+	"spindle/internal/favorites"
 )
 
 // FavoritesSource is the favorites list and its writer; *favorites.Service is the real one.

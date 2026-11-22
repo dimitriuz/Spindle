@@ -139,7 +139,7 @@ func (s *Stations) directory(ctx context.Context, path string, q url.Values) ([]
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("User-Agent", "cliamp-web")
+		req.Header.Set("User-Agent", "spindle")
 		resp, err := s.client().Do(req)
 		if err != nil {
 			last = errors.New("art: radio directory unreachable")
@@ -225,7 +225,7 @@ func (s *Stations) streamHeaders(ctx context.Context, streamURL string) (http.He
 		return nil, err
 	}
 	req.Header.Set("Icy-MetaData", "1")
-	req.Header.Set("User-Agent", "cliamp-web")
+	req.Header.Set("User-Agent", "spindle")
 	resp, err := s.client().Do(req)
 	if err != nil {
 		return nil, errors.New("art: stream unreachable") // not the url error: it quotes the address
@@ -269,7 +269,7 @@ func (s *Stations) Image(ctx context.Context, logoURL string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "cliamp-web")
+	req.Header.Set("User-Agent", "spindle")
 	resp, err := s.client().Do(req)
 	if err != nil {
 		return nil, errors.New("art: logo unreachable")

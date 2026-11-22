@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
       - run: make release
-      - run: cp web.lua dist/release/web.lua && cd dist/release && sha256sum cliamp-web-* web.lua > sha256sums.txt
+      - run: cp spindle.lua dist/release/spindle.lua && cd dist/release && sha256sum spindle-* spindle.lua > sha256sums.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/release/*

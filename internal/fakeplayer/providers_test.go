@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 func startProviders(t *testing.T) *ipc.Conn {

@@ -78,7 +78,7 @@ func (c NavidromeConfig) query(extra url.Values) url.Values {
 	_, _ = rand.Read(salt)
 	s := hex.EncodeToString(salt)
 	sum := md5.Sum([]byte(c.Password + s))
-	q := url.Values{"u": {c.User}, "s": {s}, "t": {hex.EncodeToString(sum[:])}, "v": {"1.16.1"}, "c": {"cliamp-web"}}
+	q := url.Values{"u": {c.User}, "s": {s}, "t": {hex.EncodeToString(sum[:])}, "v": {"1.16.1"}, "c": {"spindle"}}
 	for k, v := range extra {
 		q[k] = v
 	}

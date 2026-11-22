@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 // fakeCliamp models what the real player does with favorites: both ops only

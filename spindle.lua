@@ -1,19 +1,19 @@
--- Spindle: web remote for cliamp. Spawns and supervises the cliamp-web bridge.
+-- Spindle: web remote for cliamp. Spawns and supervises the spindle bridge.
 local p = plugin.register({
-    name        = "web",
+    name        = "spindle",
     type        = "hook",
     version     = "0.1.0",
-    description = "LAN web interface (spawns the cliamp-web bridge)",
+    description = "LAN web interface (spawns the spindle bridge)",
     permissions = {"exec"},
 })
 
 local port  = tostring(p:config("port") or "8730")
 local lan   = p:config("lan")
 local hosts = p:config("allowed_hosts")
-local bin   = p:config("binary") or "cliamp-web"
+local bin   = p:config("binary") or "spindle"
 
 -- same lookup as the bridge's own default, so status.json is found
-local datadir = (os.getenv("XDG_DATA_HOME") or (os.getenv("HOME") .. "/.local/share")) .. "/cliamp/web"
+local datadir = (os.getenv("XDG_DATA_HOME") or (os.getenv("HOME") .. "/.local/share")) .. "/cliamp/spindle"
 local restarts, handle, quitting = 0, nil, false
 
 local function arglist()
@@ -47,7 +47,7 @@ local function start()
                 cliamp.timer.after(2, start)
             else
                 cliamp.log.error("bridge keeps failing; giving up this session")
-                cliamp.message("web: bridge died, giving up")
+                cliamp.message("spindle: bridge died, giving up")
             end
         end,
     })
@@ -68,7 +68,7 @@ p:on("app.start", function()
     cliamp.timer.after(1.5, function()
         local st = read_status()
         if st and st.url then
-            cliamp.message("web remote: " .. st.url, 10)
+            cliamp.message("Spindle: " .. st.url, 10)
         end
     end)
 end)

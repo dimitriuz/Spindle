@@ -1,4 +1,4 @@
-module cliamp-web
+module spindle
 
 go 1.23
 

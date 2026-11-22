@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 func libConfig(t *testing.T, fr *fakeRunner) Config {

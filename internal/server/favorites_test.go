@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"cliamp-web/internal/favorites"
-	"cliamp-web/internal/ipc"
+	"spindle/internal/favorites"
+	"spindle/internal/ipc"
 )
 
 type fakeFav struct {

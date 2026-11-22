@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"cliamp-web/internal/enqueue"
+	"spindle/internal/enqueue"
 )
 
 type fakeEnq struct {

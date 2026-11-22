@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"cliamp-web/internal/fakeplayer"
+	"spindle/internal/fakeplayer"
 )
 
 var testHTTP = &http.Client{Timeout: 2 * time.Second}

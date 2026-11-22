@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 func ev(topic, data string) ipc.Event {

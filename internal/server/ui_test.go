@@ -7,7 +7,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"cliamp-web/webui"
+	"spindle/webui"
 )
 
 func fakeUI() fstest.MapFS {

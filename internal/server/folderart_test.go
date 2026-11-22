@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"cliamp-web/internal/art"
-	"cliamp-web/internal/files"
+	"spindle/internal/art"
+	"spindle/internal/files"
 )
 
 type fakeFolderArt struct {

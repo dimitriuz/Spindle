@@ -24,7 +24,7 @@ type AboutSource func() AboutInfo
 // about serves GET /api/about: the bridge's version and state for the Settings page.
 func (s *serverState) about(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
-		"name":   "cliamp-web",
+		"name":   "spindle",
 		"go":     runtime.Version(),
 		"os":     runtime.GOOS + "/" + runtime.GOARCH,
 		"uptime": int64(time.Since(s.started).Seconds()),

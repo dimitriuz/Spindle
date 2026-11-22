@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"cliamp-web/internal/enqueue"
+	"spindle/internal/enqueue"
 )
 
 // EnqueueSource runs queue actions in the background; *enqueue.Service is the real one.

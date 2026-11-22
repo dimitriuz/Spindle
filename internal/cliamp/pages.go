@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"cliamp-web/internal/ipc"
+	"spindle/internal/ipc"
 )
 
 // PageSize is how many rows are asked for at a time.

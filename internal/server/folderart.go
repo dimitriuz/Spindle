@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	"cliamp-web/internal/art"
-	"cliamp-web/internal/files"
+	"spindle/internal/art"
+	"spindle/internal/files"
 )
 
 // FolderArtSource makes a thumbnail of a music folder's cover; *art.Resolver is the real one.
