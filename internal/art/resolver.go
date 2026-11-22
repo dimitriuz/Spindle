@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -28,6 +29,7 @@ type Resolver struct {
 	restore func(string) string
 	known   func(string) bool
 	folders CoverFinder
+	st      *Stations
 	ndCfg   *NavidromeConfig // the user's server login from cliamp's config, for covers by id
 }
 
@@ -46,6 +48,7 @@ func NewResolver(o Options) (*Resolver, error) {
 		local:   &Local{Known: o.Known},
 		restore: restore,
 		known:   o.Known,
+		st:      &Stations{},
 	}, nil
 }
 
@@ -54,7 +57,7 @@ func NewResolver(o Options) (*Resolver, error) {
 // are not remembered.
 func (r *Resolver) Get(ctx context.Context, kind Kind, trackPath string) (*Image, error) {
 	img, err := r.get(ctx, kind, trackPath)
-	if kind == Disc && errors.Is(err, ErrNoArt) {
+	if kind == Disc && errors.Is(err, ErrNoArt) && !isStation(r.restore(trackPath)) {
 		return r.synthDisc(ctx, trackPath) // no disc image anywhere: draw one from the cover
 	}
 	return img, err
@@ -96,6 +99,18 @@ func (r *Resolver) get(ctx context.Context, kind Kind, trackPath string) (*Image
 		}
 		return r.cache.Do(key, fetch)
 	}
+	if isStation(orig) {
+		if kind != Cover {
+			return nil, ErrNoArt // a radio station has a logo, no disc or artist photo
+		}
+		return r.cache.Do("station:u:"+hashKey(orig), func() ([]byte, error) {
+			logo, err := r.st.Logo(ctx, orig, "")
+			if err != nil {
+				return nil, err
+			}
+			return r.st.Image(ctx, logo)
+		})
+	}
 	key, fetch, err := r.local.Resolve(kind, trackPath)
 	if err != nil {
 		return nil, err
@@ -114,7 +129,40 @@ func (r *Resolver) Info(ctx context.Context, trackPath string, durationSecs floa
 	if _, _, _, ok := parseStream(orig); ok {
 		return r.nd.Info(ctx, orig)
 	}
+	if isStation(orig) {
+		return r.st.Info(ctx, orig)
+	}
 	return r.local.Info(trackPath, durationSecs)
+}
+
+// isStation tells an internet radio stream (any http(s) URL that is not a
+// Navidrome stream) from a local file path.
+func isStation(p string) bool {
+	if !strings.HasPrefix(p, "http://") && !strings.HasPrefix(p, "https://") {
+		return false
+	}
+	_, _, _, nd := parseStream(p)
+	return !nd
+}
+
+// StationArt returns the logo of a station by its catalog name, for lists.
+func (r *Resolver) StationArt(ctx context.Context, name string) (*Image, error) {
+	clean := CleanStationName(name)
+	if clean == "" || len(clean) > 120 {
+		return nil, ErrNoArt
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	return r.cache.Do("station:n:"+hashKey(strings.ToLower(clean)), func() ([]byte, error) {
+		rec, ok, err := r.st.ByName(ctx, clean)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || rec.Favicon == "" {
+			return nil, ErrNoArt
+		}
+		return r.st.Image(ctx, rec.Favicon)
+	})
 }
 
 // SetNavidrome gives the resolver the login for covers by album, artist and

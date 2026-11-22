@@ -103,6 +103,8 @@ function placeholderStyle(name) {
 }
 const itemArtUrl = (kind, provider, id) => (provider === 'navidrome' && id && ['album', 'artist', 'playlist'].includes(kind)
   ? '/api/art/item?provider=navidrome&kind=' + kind + '&id=' + encodeURIComponent(id) : '');
+// a radio station's logo, found by the bridge from its (catalog) name
+const stationArtUrl = (name) => (name ? '/api/art/station?name=' + encodeURIComponent(name) : '');
 const folderArtUrl = (rel) => '/api/files/art?path=' + encodeURIComponent(rel);
 // albumFacts: what an album page says about itself, from its tracks (year and genre of
 // the first track that has one; length is the sum of the known durations)
@@ -348,7 +350,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -616,6 +618,8 @@ if (typeof document !== 'undefined') (function () {
     if (p === art.path) return;
     art.path = p;
     const seq = ++art.seq;
+    // a station's logo is small and rarely square: show it whole
+    $('art-cover').classList.toggle('logo', /^https?:/.test(p) && !/\/rest\/stream/.test(p));
     if (!p) {
       art.coverOk = art.disc = art.showDisc = false; art.info = null; art.albumKey = ''; art.idx = null;
       $('artist-img').hidden = true; $('fs-bg').style.backgroundImage = '';
@@ -956,7 +960,7 @@ if (typeof document !== 'undefined') (function () {
     const cover = h('div', { class: 'cover2' }, h('span', { class: 'ph2' }, svg(o.tkind || o.icon || 'note')));
     cover.style.background = 'hsl(' + ps.hue + ' ' + ps.sat + '% ' + ps.light + '%)';
     if (o.art) {
-      const img = h('img', { class: 'art2', alt: '', loading: 'lazy', decoding: 'async', src: o.art });
+      const img = h('img', { class: 'art2' + (o.tkind === 'radio' ? ' logo' : ''), alt: '', loading: 'lazy', decoding: 'async', src: o.art });
       img.onerror = () => img.remove(); // no picture: the placeholder stays
       cover.append(img);
     }
@@ -1283,7 +1287,7 @@ if (typeof document !== 'undefined') (function () {
     }
     if (k === 'radio') {
       const hh = heart({ kind: 'radio', provider: 'radio', id: it.id });
-      return { title, sub: 'radio', tkind: 'radio', heart: hh, more: radioMore('radio', it.id, hh),
+      return { title, sub: 'radio', tkind: 'radio', art: stationArtUrl(title), heart: hh, more: radioMore('radio', it.id, hh),
         onTap: () => { cmd('provider.load', { provider: 'radio', playlist: it.id }, true); rev(); } };
     }
     const dir = k === 'album' ? 'albums' : k === 'artist' ? 'artists' : 'playlists';
@@ -1439,7 +1443,7 @@ if (typeof document !== 'undefined') (function () {
     }
     // radio catalog: stations have no path; tap plays via provider.load
     const hh = row.favoritable ? heartBtn({ on: !!row.favorite || /^★ /.test(row.name || ''), req: { kind: 'radio', provider: prov, id: row.id } }) : null;
-    return { title: name, sub: row.genre || '', tkind: 'radio', heart: hh, more: radioMore(prov, row.id, hh),
+    return { title: name, sub: row.genre || '', tkind: 'radio', art: row.favoritable ? stationArtUrl(name) : '', heart: hh, more: radioMore(prov, row.id, hh),
       onTap: () => { cmd('provider.load', { provider: prov, playlist: row.id }, true); rev(); } };
   }
   // ---- Files: the music folder cliamp's own file browser starts in ----

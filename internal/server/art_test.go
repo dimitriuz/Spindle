@@ -238,3 +238,38 @@ func TestItemArt404HasNoCredentialsAndNilSourceIs404(t *testing.T) {
 		t.Fatalf("no source: %d", rec.Code)
 	}
 }
+
+type fakeStationArt struct {
+	img  *art.Image
+	err  error
+	name string
+}
+
+func (f *fakeStationArt) StationArt(_ context.Context, name string) (*art.Image, error) {
+	f.name = name
+	return f.img, f.err
+}
+
+func TestStationArtRoute(t *testing.T) {
+	fs := &fakeStationArt{img: &art.Image{Data: []byte("png"), ContentType: "image/png", Key: "k1"}}
+	cfg := guardedConfig(t)
+	cfg.StationArt = fs
+	h := New(cfg)
+	rec := artGet(h, "/api/art/station?name="+"Classic+Vinyl+HD+%5B320k%5D+%C2%B7+USA", nil)
+	if rec.Code != 200 || rec.Header().Get("ETag") == "" || fs.name != "Classic Vinyl HD [320k] · USA" {
+		t.Fatalf("%d %v %q", rec.Code, rec.Header(), fs.name)
+	}
+	if rec := artGet(h, "/api/art/station", nil); rec.Code != 400 {
+		t.Fatalf("missing name: %d", rec.Code)
+	}
+	if rec := artGet(h, "/api/art/station?name="+strings.Repeat("a", 201), nil); rec.Code != 400 {
+		t.Fatalf("long name: %d", rec.Code)
+	}
+	fs.img, fs.err = nil, errors.New("no")
+	if rec := artGet(h, "/api/art/station?name=x", nil); rec.Code != 404 || strings.Contains(rec.Body.String(), "no\"") {
+		t.Fatalf("failure: %d %s", rec.Code, rec.Body)
+	}
+	if rec := artGet(New(guardedConfig(t)), "/api/art/station?name=x", nil); rec.Code != 404 {
+		t.Fatalf("no source: %d", rec.Code)
+	}
+}

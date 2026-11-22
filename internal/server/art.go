@@ -109,3 +109,28 @@ func (s *serverState) itemArt(w http.ResponseWriter, r *http.Request) {
 	}
 	writeImage(w, r, img)
 }
+
+// StationArtSource finds the logo of an internet radio station by name.
+type StationArtSource interface {
+	StationArt(ctx context.Context, name string) (*art.Image, error)
+}
+
+// stationArt serves GET /api/art/station?name=<catalog name>: the logo shown on
+// radio tiles. The name only ever goes to the public radio directory.
+func (s *serverState) stationArt(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if name == "" || len(name) > 200 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
+	if s.cfg.StationArt == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
+		return
+	}
+	img, err := s.cfg.StationArt.StationArt(r.Context(), name)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
+		return
+	}
+	writeImage(w, r, img)
+}

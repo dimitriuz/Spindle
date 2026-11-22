@@ -234,6 +234,8 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.itemArtUrl('album', 'local', 'x'), '', 'only Navidrome has covers by id');
     assert.equal(A.itemArtUrl('radio', 'navidrome', 'x'), '');
     assert.equal(A.itemArtUrl('album', 'navidrome', ''), '');
+    assert.equal(A.stationArtUrl('Classic Vinyl HD [320k] · USA'), '/api/art/station?name=Classic%20Vinyl%20HD%20%5B320k%5D%20%C2%B7%20USA');
+    assert.equal(A.stationArtUrl(''), '');
     assert.equal(A.folderArtUrl('Classic/A B'), '/api/files/art?path=Classic%2FA%20B');
     assert.equal(A.folderArtUrl('日本/曲#1'), '/api/files/art?path=%E6%97%A5%E6%9C%AC%2F%E6%9B%B2%231');
     assert.equal(A.nextChunk(10, 0, 4), 4);

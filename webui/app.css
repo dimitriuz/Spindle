@@ -219,6 +219,8 @@ ul.grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-
 .cover2 { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
 .cover2 .ph2 { display: inline-flex; width: 36%; height: 36%; color: rgba(255,255,255,.55); }
 .cover2 .ph2 svg { width: 100%; height: 100%; }
+.art.logo { object-fit: contain; background: var(--art); }
+.cover2 .art2.logo { object-fit: contain; padding: 10%; box-sizing: border-box; }
 .cover2 .art2 { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--art); }
 .tname { margin-top: 8px; font-size: 15px; font-weight: 600; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tsub { font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
