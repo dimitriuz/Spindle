@@ -49,6 +49,10 @@ type Config struct {
 	// HeartbeatInterval is the SSE keepalive cadence (0 ⇒ 15 s).
 	HeartbeatInterval time.Duration
 
+	// StatusMinGap is the shortest time between two position-only status
+	// frames on /api/ws (0 ⇒ 1 s).
+	StatusMinGap time.Duration
+
 	listCache      *ttlcache
 	providersCache *ttlcache
 	noCache        *ttlcache
@@ -66,6 +70,13 @@ func (c *Config) heartbeat() time.Duration {
 		return 15 * time.Second
 	}
 	return c.HeartbeatInterval
+}
+
+func (c *Config) statusGap() time.Duration {
+	if c.StatusMinGap == 0 {
+		return time.Second
+	}
+	return c.StatusMinGap
 }
 
 type serverState struct {
@@ -90,6 +101,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/queue", s.protect(http.HandlerFunc(s.queue)))
 	mux.Handle("GET /api/about", s.protect(http.HandlerFunc(s.about)))
 	mux.Handle("GET /api/capabilities", s.protect(http.HandlerFunc(s.capabilities)))
+	mux.Handle("GET /api/ws", s.protect(http.HandlerFunc(s.ws)))
 	mux.Handle("GET /api/events", s.protect(http.HandlerFunc(s.events)))
 	mux.Handle("POST /api/command", s.protect(http.HandlerFunc(s.command)))
 	mux.Handle("GET /api/library/providers", s.protect(http.HandlerFunc(s.libraryProviders)))
