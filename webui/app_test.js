@@ -234,6 +234,32 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.deepEqual(view({ track: {}, index: 0 }, { tracks: rows, play_next: [{ index: 99 }] }), ['a:current', 'b:later', 'c:later', 'd:later', 'e:later'], 'a reference past the list is ignored');
   });
 
+  await ok('queueView with shuffle: played means what the bridge saw play, in that order', () => {
+    const rows = ['a', 'b', 'c', 'd', 'e'].map((x) => ({ title: x, path: '/m/' + x }));
+    const view = (st, q) => A.queueView(st, q).map((r) => r.title + ':' + r.status);
+    // d then a were played; c is playing; b and e have not played, in list order (a shuffled order is not knowable)
+    assert.deepEqual(view({ track: {}, index: 2, shuffle: true }, { tracks: rows, play_next: [], played: ['/m/d', '/m/a'] }),
+      ['d:played', 'a:played', 'c:current', 'b:later', 'e:later']);
+    // without shuffle the same record is ignored: plain list order
+    assert.deepEqual(view({ track: {}, index: 2, shuffle: false }, { tracks: rows, play_next: [], played: ['/m/d', '/m/a'] }),
+      ['a:played', 'b:played', 'c:current', 'd:later', 'e:later']);
+    // up-next entries still come right after the current one
+    assert.deepEqual(view({ track: {}, index: 2, shuffle: true }, { tracks: rows, play_next: [{ index: 4 }], played: ['/m/d'] }),
+      ['d:played', 'c:current', 'e:next', 'a:later', 'b:later']);
+    // no record from the bridge (an older bridge, nothing played yet): nothing is greyed under shuffle
+    assert.deepEqual(view({ track: {}, index: 2, shuffle: true }, { tracks: rows, play_next: [], played: [] }),
+      ['c:current', 'a:later', 'b:later', 'd:later', 'e:later']);
+    assert.deepEqual(view({ track: {}, index: 2, shuffle: true }, { tracks: rows, play_next: [] }),
+      ['a:played', 'b:played', 'c:current', 'd:later', 'e:later'], 'no played field at all: fall back to list order');
+    // the playing track is never listed twice, nor a path that is no longer in the queue
+    assert.deepEqual(view({ track: {}, index: 2, shuffle: true }, { tracks: rows, play_next: [], played: ['/m/c', '/m/gone', '/m/a'] }),
+      ['a:played', 'c:current', 'b:later', 'd:later', 'e:later']);
+    // the same track twice in the queue, played once: only one of the rows is greyed
+    const dup = ['x', 'y', 'x'].map((t, i) => ({ title: t + i, path: '/m/' + t }));
+    assert.deepEqual(view({ track: {}, index: 1, shuffle: true }, { tracks: dup, play_next: [], played: ['/m/x'] }),
+      ['x0:played', 'y1:current', 'x2:later']);
+  });
+
   await ok('queueView: live index and position inside the up-next list are kept for the menu', () => {
     const rows = ['a', 'b', 'c', 'd'].map((title) => ({ title }));
     const v = A.queueView({ track: {}, index: 0 }, { tracks: rows, play_next: [{ index: 3 }, { index: 2 }] });

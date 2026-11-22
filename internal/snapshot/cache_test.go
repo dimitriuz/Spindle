@@ -3,6 +3,7 @@ package snapshot
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"cliamp-web/internal/ipc"
@@ -230,5 +231,139 @@ func TestHasTrackCoversStateQueueAndPlayNext(t *testing.T) {
 	c.AbsorbQueueResult(json.RawMessage(`{"ok":true,"tracks":[{"path":"/music/q3.flac"}]}`), 2)
 	if c.HasTrack("/music/q1.flac") || !c.HasTrack("/music/q3.flac") {
 		t.Fatal("queue replacement must replace the known set")
+	}
+}
+
+func trackState(rev int, path string) json.RawMessage {
+	if path == "" {
+		return json.RawMessage(fmt.Sprintf(`{"revision":%d,"state":"stopped"}`, rev))
+	}
+	return json.RawMessage(fmt.Sprintf(`{"revision":%d,"state":"playing","track":{"title":"t","path":%q}}`, rev, path))
+}
+
+func rowsJSON(paths ...string) json.RawMessage {
+	var rows []string
+	for _, p := range paths {
+		rows = append(rows, fmt.Sprintf(`{"title":"t","path":%q}`, p))
+	}
+	return json.RawMessage(`{"ok":true,"total":` + fmt.Sprint(len(paths)) + `,"tracks":[` + strings.Join(rows, ",") + `]}`)
+}
+
+// With shuffle the list order says nothing about what has played, so the
+// bridge records the tracks the player actually moved through, in order.
+func TestPlayedTracksAreRecordedInTheOrderTheyWerePlayed(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c", "d", "e"), 1)
+	for i, p := range []string{"d", "a", "e", "b"} { // a shuffled run
+		c.SetState(trackState(i+1, p))
+	}
+	got := c.Queue().Played
+	if strings.Join(got, "") != "dae" {
+		t.Fatalf("d, a and e were played, b is playing: got %v", got)
+	}
+}
+
+func TestPlayedIgnoresStaleSnapshotsAndRepeats(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c"), 1)
+	c.SetState(trackState(5, "a"))
+	c.SetState(trackState(6, "b"))
+	c.SetState(trackState(4, "c")) // older than what we hold: must not count
+	c.SetState(trackState(7, "b")) // same track again: no change
+	if got := strings.Join(c.Queue().Played, ""); got != "a" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestReplayingATrackMovesItToTheEndOfThePlayedList(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c"), 1)
+	for i, p := range []string{"a", "b", "a", "c"} {
+		c.SetState(trackState(i+1, p))
+	}
+	if got := strings.Join(c.Queue().Played, ""); got != "ba" {
+		t.Fatalf("a was played again after b: got %q", got)
+	}
+}
+
+func TestPlayedKeepsGrowingWhenTracksAreAppended(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c", "d"), 1)
+	c.SetState(trackState(1, "a"))
+	c.SetState(trackState(2, "b"))
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c", "d", "e", "f", "g"), 2) // Add to queue
+	if got := strings.Join(c.Queue().Played, ""); got != "a" {
+		t.Fatalf("appending must not forget what played: %q", got)
+	}
+}
+
+func TestPlayedForgetsTracksThatLeftTheQueue(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c", "d"), 1)
+	c.SetState(trackState(1, "a"))
+	c.SetState(trackState(2, "b"))
+	c.SetState(trackState(3, "c"))
+	c.AbsorbQueueResult(rowsJSON("b", "c", "d"), 2) // a removed
+	if got := strings.Join(c.Queue().Played, ""); got != "b" {
+		t.Fatalf("a is gone: %q", got)
+	}
+}
+
+func TestPlayedStartsOverWhenTheQueueIsReplaced(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c", "d"), 1)
+	c.SetState(trackState(1, "a"))
+	c.SetState(trackState(2, "b"))
+	c.SetState(trackState(3, "c"))
+	c.AbsorbQueueResult(rowsJSON("x", "y", "z"), 2) // a different album was loaded
+	c.SetState(trackState(4, "x"))
+	if got := c.Queue().Played; len(got) != 0 {
+		t.Fatalf("a new queue has played nothing yet: %v", got)
+	}
+	c.SetState(trackState(5, "y"))
+	if got := strings.Join(c.Queue().Played, ""); got != "x" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestClearingTheQueueDoesNotMarkTheLastTrackPlayed(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b"), 1)
+	c.SetState(trackState(1, "a"))
+	c.SetState(trackState(2, "")) // queue.clear: stopped, no track
+	c.AbsorbQueueResult(rowsJSON("a"), 3)
+	c.SetState(trackState(3, "a"))
+	if got := c.Queue().Played; len(got) != 0 {
+		t.Fatalf("%v", got)
+	}
+}
+
+func TestPlayedIsEmptyArrayInJSON(t *testing.T) {
+	b, _ := json.Marshal(NewCache().Queue())
+	if !strings.Contains(string(b), `"played":[]`) {
+		t.Fatalf("the page needs [] not null: %s", b)
+	}
+}
+
+// A track that was only selected while the player was stopped never played.
+func TestSelectedButNeverPlayedIsNotPlayed(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b", "c"), 1)
+	c.SetState(json.RawMessage(`{"revision":1,"state":"stopped","track":{"title":"t","path":"a"}}`))
+	c.SetState(trackState(2, "b")) // the user picked b; a was never played
+	c.SetState(trackState(3, "c"))
+	if got := strings.Join(c.Queue().Played, ""); got != "b" {
+		t.Fatalf("only b played: %q", got)
+	}
+}
+
+func TestPausedTrackCountsAsPlayed(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(rowsJSON("a", "b"), 1)
+	c.SetState(trackState(1, "a"))
+	c.SetState(json.RawMessage(`{"revision":2,"state":"paused","track":{"title":"t","path":"a"}}`))
+	c.SetState(trackState(3, "b"))
+	if got := strings.Join(c.Queue().Played, ""); got != "a" {
+		t.Fatalf("%q", got)
 	}
 }

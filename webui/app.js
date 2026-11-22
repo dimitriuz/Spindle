@@ -111,11 +111,22 @@ function queueView(st, q) {
     if (i >= 0 && i < rows.length && i !== cur && !queuedAt.has(i)) queuedAt.set(i, p);
   });
   const entry = (i, status) => ({ t: rows[i], title: rows[i].title, index: i, status, pn: queuedAt.has(i) ? queuedAt.get(i) : -1 });
-  const out = [];
-  for (let i = 0; i < rows.length; i++) if (i < cur && !queuedAt.has(i)) out.push(entry(i, 'played'));
-  if (cur >= 0 && cur < rows.length) out.push(entry(cur, 'current'));
-  Array.from(queuedAt.entries()).sort((a, b) => a[1] - b[1]).forEach(([i]) => out.push(entry(i, 'next')));
-  for (let i = Math.max(cur + 1, 0); i < rows.length; i++) if (!queuedAt.has(i)) out.push(entry(i, 'later'));
+  const out = [], used = new Set();
+  const add = (i, status) => { used.add(i); out.push(entry(i, status)); };
+
+  if (st && st.shuffle && Array.isArray(q.played)) {
+    // Shuffle plays in an order the list does not show, so "before the current
+    // index" means nothing. The bridge records what really played, oldest first.
+    for (const path of q.played) {
+      const i = rows.findIndex((r, j) => r.path === path && j !== cur && !queuedAt.has(j) && !used.has(j));
+      if (i >= 0) add(i, 'played');
+    }
+  } else {
+    for (let i = 0; i < rows.length && i < cur; i++) if (!queuedAt.has(i)) add(i, 'played');
+  }
+  if (cur >= 0 && cur < rows.length) add(cur, 'current');
+  Array.from(queuedAt.entries()).sort((a, b) => a[1] - b[1]).forEach(([i]) => add(i, 'next'));
+  for (let i = 0; i < rows.length; i++) if (!used.has(i)) add(i, 'later');
   return out;
 }
 

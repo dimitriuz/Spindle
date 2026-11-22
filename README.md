@@ -95,7 +95,10 @@ button; arrows, Home/End, Enter and Escape work, and Escape returns the focus.
   a Stop button; there is no size limit, 12,000 tracks take a few minutes.
 - The **Queue tab is one list in play order**: tracks that already played are greyed
   at the top, then the current one, then what plays next (cliamp's up-next entries
-  come first), then the rest. Rows have Play from here, Play next, Move up/down
+  come first), then the rest. With shuffle on, the greyed tracks are the ones that
+  really played, in that order (the bridge records them; cliamp does not expose its
+  shuffle order, so the tracks still to come are listed in list order). The record
+  starts over when you load a different queue and begins empty when the bridge restarts. Rows have Play from here, Play next, Move up/down
   (inside their group) and Remove.
 - Favorite is in every menu next to the heart.
 
