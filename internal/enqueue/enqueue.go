@@ -1,0 +1,298 @@
+// Package enqueue does the multi-step queue work behind the item menu's
+// "Play" and "Add to queue": clearing the queue and playing, or appending a
+// whole album, playlist or artist track by track, in the background and with
+// progress.
+package enqueue
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"regexp"
+	"sync"
+	"time"
+
+	"cliamp-web/internal/cliamp"
+	"cliamp-web/internal/ipc"
+)
+
+var (
+	ErrBusy      = errors.New("enqueue: another request is running")
+	ErrInvalid   = errors.New("enqueue: invalid request")
+	ErrUntrusted = errors.New("enqueue: unknown track path")
+)
+
+// Request is one menu action. Kind: track|album|playlist|artist. Mode: play
+// (clear the queue, add, start playing) or append (add to the end).
+type Request struct {
+	Kind, Provider, ID, Mode string
+	Track                    map[string]any
+}
+
+// Event reports progress. State: running|done|failed|cancelled.
+type Event struct {
+	State string `json:"state"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
+	Error string `json:"error,omitempty"`
+}
+
+const eventEvery = 200 * time.Millisecond
+
+type Service struct {
+	r       ipc.OpRunner
+	restore func(string) string
+	known   func(string) bool
+	emit    func(Event)
+	now     func() time.Time
+
+	mu      sync.Mutex
+	running bool
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	lastEv  time.Time
+}
+
+func New(r ipc.OpRunner, restore func(string) string, known func(string) bool, emit func(Event), now func() time.Time) *Service {
+	if restore == nil {
+		restore = func(s string) string { return s }
+	}
+	if emit == nil {
+		emit = func(Event) {}
+	}
+	if now == nil {
+		now = time.Now
+	}
+	return &Service{r: r, restore: restore, known: known, emit: emit, now: now}
+}
+
+// Start validates the request and runs it in the background.
+func (s *Service) Start(req Request) error {
+	switch req.Mode {
+	case "play", "append":
+	default:
+		return ErrInvalid
+	}
+	switch req.Kind {
+	case "track":
+		path, _ := req.Track["path"].(string)
+		if req.Track == nil || path == "" {
+			return ErrInvalid
+		}
+		// only stream URLs the bridge handed out, or tracks it knows
+		orig := s.restore(path)
+		if orig == path && (s.known == nil || !s.known(path)) {
+			return ErrUntrusted
+		}
+		tr := make(map[string]any, len(req.Track))
+		for k, v := range req.Track {
+			tr[k] = v
+		}
+		tr["path"] = orig
+		req.Track = tr
+	case "album", "playlist", "artist":
+		if req.Provider == "" || req.ID == "" {
+			return ErrInvalid
+		}
+	default:
+		return ErrInvalid
+	}
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return ErrBusy
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.running, s.cancel = true, cancel
+	s.wg.Add(1)
+	s.mu.Unlock()
+	go s.work(ctx, req)
+	return nil
+}
+
+// Cancel stops the running request after the item in flight.
+func (s *Service) Cancel() {
+	s.mu.Lock()
+	c := s.cancel
+	s.mu.Unlock()
+	if c != nil {
+		c()
+	}
+}
+
+// Wait blocks until the running request (if any) has ended.
+func (s *Service) Wait() { s.wg.Wait() }
+
+func (s *Service) finish() {
+	s.mu.Lock()
+	s.running = false
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+	s.mu.Unlock()
+	s.wg.Done()
+}
+
+var urlRe = regexp.MustCompile(`https?://\S+`)
+
+// safeError is what may be shown to the browser: cliamp's own message with
+// any URL removed (stream URLs carry the account login).
+func safeError(err error) string {
+	var ie *ipc.IPCError
+	switch {
+	case errors.As(err, &ie) && ie.Detail != "":
+		return urlRe.ReplaceAllString(ie.Detail, "<url>")
+	case errors.Is(err, ipc.ErrNotConnected):
+		return "player offline"
+	}
+	return "request failed"
+}
+
+// progress sends an event at most every 200 ms; force always sends.
+func (s *Service) progress(state string, done, total int, force bool) {
+	now := s.now()
+	if !force && now.Sub(s.lastEv) < eventEvery {
+		return
+	}
+	s.lastEv = now
+	s.emit(Event{State: state, Done: done, Total: total})
+}
+
+func (s *Service) work(ctx context.Context, req Request) {
+	defer s.finish()
+	done, total := 0, 0
+	fail := func(err error) {
+		if ctx.Err() != nil {
+			s.emit(Event{State: "cancelled", Done: done, Total: total})
+			return
+		}
+		s.emit(Event{State: "failed", Done: done, Total: total, Error: safeError(err)})
+	}
+	op := func(name string, params map[string]any) error {
+		_, err := s.r.SubmitJob(ctx, name, params)
+		return err
+	}
+
+	switch {
+	case req.Kind == "track" && req.Mode == "play":
+		total = 1
+		if err := op("queue.clear", map[string]any{}); err != nil {
+			fail(err)
+			return
+		}
+		if err := op("track.play", map[string]any{"track": req.Track}); err != nil {
+			fail(err)
+			return
+		}
+		s.emit(Event{State: "done", Done: 1, Total: 1})
+		return
+	case req.Kind == "track":
+		total = 1
+		if err := op("queue", map[string]any{"path": req.Track["path"]}); err != nil {
+			fail(err)
+			return
+		}
+		s.emit(Event{State: "done", Done: 1, Total: 1})
+		return
+	case req.Mode == "play" && req.Kind == "album":
+		total = 1
+		if err := op("provider.load_album", map[string]any{"provider": req.Provider, "album": req.ID}); err != nil {
+			fail(err)
+			return
+		}
+		s.emit(Event{State: "done", Done: 1, Total: 1})
+		return
+	case req.Mode == "play" && req.Kind == "playlist":
+		total = 1
+		if err := op("provider.load", map[string]any{"provider": req.Provider, "playlist": req.ID}); err != nil {
+			fail(err)
+			return
+		}
+		s.emit(Event{State: "done", Done: 1, Total: 1})
+		return
+	}
+
+	// everything else walks a track list: append for album/playlist/artist, and Play for an artist
+	tracks, err := s.listTracks(ctx, req)
+	if err != nil {
+		fail(err)
+		return
+	}
+	total = len(tracks)
+	s.progress("running", 0, total, true)
+	rest := tracks
+	if req.Mode == "play" { // artist: clear, start on the first track, queue the others
+		if err := op("queue.clear", map[string]any{}); err != nil {
+			fail(err)
+			return
+		}
+		if total > 0 {
+			if err := op("track.play", map[string]any{"track": tracks[0]}); err != nil {
+				fail(err)
+				return
+			}
+			done = 1
+			rest = tracks[1:]
+		}
+	}
+	for _, t := range rest {
+		if ctx.Err() != nil {
+			fail(ctx.Err())
+			return
+		}
+		if path, _ := t["path"].(string); path != "" {
+			if err := op("queue", map[string]any{"path": path}); err != nil {
+				fail(err)
+				return
+			}
+		}
+		done++
+		s.progress("running", done, total, false)
+	}
+	s.emit(Event{State: "done", Done: done, Total: total})
+}
+
+func decode(rows []json.RawMessage) []map[string]any {
+	out := make([]map[string]any, 0, len(rows))
+	for _, r := range rows {
+		var m map[string]any
+		if json.Unmarshal(r, &m) == nil {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func (s *Service) albumTracks(ctx context.Context, provider, album string) ([]map[string]any, error) {
+	rows, err := cliamp.Pages(ctx, s.r, "provider.album_tracks", map[string]any{"provider": provider, "album": album}, "tracks", 0)
+	return decode(rows), err
+}
+
+func (s *Service) listTracks(ctx context.Context, req Request) ([]map[string]any, error) {
+	switch req.Kind {
+	case "album":
+		return s.albumTracks(ctx, req.Provider, req.ID)
+	case "playlist":
+		rows, err := cliamp.Pages(ctx, s.r, "provider.tracks", map[string]any{"provider": req.Provider, "playlist": req.ID}, "tracks", 0)
+		return decode(rows), err
+	}
+	// artist: every album, in the order the server lists them
+	albums, err := cliamp.Pages(ctx, s.r, "provider.artist_albums", map[string]any{"provider": req.Provider, "artist": req.ID}, "albums", 0)
+	if err != nil {
+		return nil, err
+	}
+	var all []map[string]any
+	for _, a := range decode(albums) {
+		id, _ := a["id"].(string)
+		if id == "" {
+			continue
+		}
+		ts, err := s.albumTracks(ctx, req.Provider, id)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, ts...)
+	}
+	return all, nil
+}

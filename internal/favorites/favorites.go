@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"cliamp-web/internal/cliamp"
 	"cliamp-web/internal/ipc"
 )
 
@@ -33,7 +34,6 @@ var ErrPartial = errors.New("favorites: player unavailable, list is incomplete")
 
 const (
 	cacheTTL   = 30 * time.Second
-	pageSize   = 200
 	maxRows    = 5000
 	maxStored  = 5000
 	fileName   = "favorites.json"
@@ -140,30 +140,7 @@ func (s *Service) save() error {
 
 // pages collects every row of a paged cliamp listing.
 func (s *Service) pages(ctx context.Context, op string, params map[string]any, field string) ([]json.RawMessage, error) {
-	var rows []json.RawMessage
-	for len(rows) < maxRows {
-		p := map[string]any{"offset": len(rows), "limit": pageSize}
-		for k, v := range params {
-			p[k] = v
-		}
-		job, err := s.r.SubmitJob(ctx, op, p)
-		if err != nil {
-			return nil, err
-		}
-		var page map[string]json.RawMessage
-		if json.Unmarshal(job.Result, &page) != nil {
-			return nil, fmt.Errorf("favorites: unreadable %s reply", op)
-		}
-		var got []json.RawMessage
-		_ = json.Unmarshal(page[field], &got)
-		rows = append(rows, got...)
-		total := -1
-		_ = json.Unmarshal(page["total"], &total)
-		if len(got) == 0 || total < 0 || len(rows) >= total {
-			break
-		}
-	}
-	return rows, nil
+	return cliamp.Pages(ctx, s.r, op, params, field, maxRows)
 }
 
 type stationRow struct {
