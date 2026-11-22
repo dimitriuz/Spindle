@@ -892,6 +892,7 @@ if (typeof document !== 'undefined') (function () {
     }
     if (!song) updateArt(null);
     renderNext();
+    if (document.activeElement !== $('eq-sel')) $('eq-sel').value = EQ_PRESETS.includes(st.eq_preset) ? st.eq_preset : '';
     renderNowHeart();
     setSpin(st.state);
     setIcon($('b-toggle'), st.state === 'playing' ? 'pause' : 'play');
@@ -962,6 +963,8 @@ if (typeof document !== 'undefined') (function () {
     $('b-toggle').onclick = () => cmd('toggle');
     $('b-prev').onclick = () => cmd('prev');
     $('b-next').onclick = () => cmd('next');
+    $('eq-sel').replaceChildren(h('option', { value: '' }, 'Custom'), ...EQ_PRESETS.map((n) => h('option', { value: n }, n)));
+    $('eq-sel').onchange = () => { if ($('eq-sel').value) cmd('eq', { name: $('eq-sel').value }); };
     $('b-shuffle').onclick = () => S.state && cmd('shuffle', { name: S.state.shuffle ? 'off' : 'on' });
     $('b-repeat').onclick = () => cmd('repeat', { name: 'cycle' });
     $('volume').addEventListener('input', (e) => {
