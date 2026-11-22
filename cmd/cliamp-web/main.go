@@ -20,6 +20,7 @@ import (
 	"cliamp-web/internal/art"
 	"cliamp-web/internal/enqueue"
 	"cliamp-web/internal/favorites"
+	"cliamp-web/internal/files"
 	"cliamp-web/internal/ipc"
 	"cliamp-web/internal/server"
 	"cliamp-web/internal/snapshot"
@@ -39,6 +40,8 @@ type runConfig struct {
 	DataDir      string
 	AllowedHosts []string
 	Verbose      bool
+	// MusicDir overrides cliamp's initial_directory as the root of the file browser.
+	MusicDir string
 }
 
 func run(ctx context.Context, rc runConfig) error {
@@ -169,6 +172,20 @@ func run(ctx context.Context, rc runConfig) error {
 
 	enq := enqueue.New(conn, server.RestoreURL, cache.HasTrack, func(e enqueue.Event) { hub.Broadcast("enqueue", e) }, time.Now)
 
+	// the file browser: the same folder cliamp's own browser starts in
+	var filesSrc server.FilesSource
+	root := rc.MusicDir
+	if root == "" {
+		home, _ := os.UserHomeDir()
+		root = files.RootFromConfig(configDir(), home)
+	}
+	if b, err := files.New(root); err != nil {
+		logger.Warn("file browser off: the music folder is not readable", "err", filepath.Base(root))
+	} else {
+		enq.SetFiles(b)
+		filesSrc = b
+	}
+
 	var favSrc server.FavoritesSource
 	if fs, err := favorites.New(rc.DataDir, conn, server.RestoreURL, time.Now); err != nil {
 		logger.Warn("favorites disabled", "err", err)
@@ -177,7 +194,7 @@ func run(ctx context.Context, rc runConfig) error {
 	}
 
 	h := server.New(server.Config{
-		Cache: cache, Runner: conn, Hub: hub, Art: artSrc, Info: infoSrc, Favorites: favSrc, Enqueue: enq,
+		Cache: cache, Runner: conn, Hub: hub, Art: artSrc, Info: infoSrc, Favorites: favSrc, Enqueue: enq, Files: filesSrc,
 		Guard:   server.NewHostGuard(rc.AllowedHosts),
 		Limiter: server.NewLimiter(20, 40, time.Now), UI: webui.FS(), Logger: logger,
 	})
@@ -225,12 +242,14 @@ func writeStatus(dir string, port int, bind string) error {
 	return os.Rename(tmp, dir+"/status.json")
 }
 
-func defaultSocket() string {
+func configDir() string {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return d + "/cliamp/cliamp.sock"
+		return d
 	}
-	return os.Getenv("HOME") + "/.config/cliamp/cliamp.sock"
+	return os.Getenv("HOME") + "/.config"
 }
+
+func defaultSocket() string { return configDir() + "/cliamp/cliamp.sock" }
 
 func defaultDataDir() string {
 	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
@@ -241,7 +260,7 @@ func defaultDataDir() string {
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] != "serve" {
-		fmt.Fprintln(os.Stderr, "usage: cliamp-web serve [--port N] [--bind ADDR] [--lan] [--socket PATH] [--data-dir DIR] [--allowed-hosts LIST] [--verbose]")
+		fmt.Fprintln(os.Stderr, "usage: cliamp-web serve [--port N] [--bind ADDR] [--lan] [--socket PATH] [--data-dir DIR] [--allowed-hosts LIST] [--music-dir DIR] [--verbose]")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
@@ -251,6 +270,7 @@ func main() {
 	lan := fs.Bool("lan", false, "bind 0.0.0.0 (LAN-visible)")
 	fs.StringVar(&rc.Socket, "socket", defaultSocket(), "cliamp IPC socket path")
 	fs.StringVar(&rc.DataDir, "data-dir", defaultDataDir(), "bridge data directory")
+	fs.StringVar(&rc.MusicDir, "music-dir", "", "root of the file browser (default: cliamp's initial_directory)")
 	hosts := fs.String("allowed-hosts", "", "comma-separated extra allowed Host values")
 	fs.BoolVar(&rc.Verbose, "verbose", false, "verbose logging to stderr")
 	_ = fs.Parse(os.Args[2:])

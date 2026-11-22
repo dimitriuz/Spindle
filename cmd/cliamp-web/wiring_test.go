@@ -594,3 +594,79 @@ appended:
 		}
 	}
 }
+
+func TestRunFileBrowserListsAndEnqueuesAFolder(t *testing.T) {
+	music := t.TempDir()
+	for i := 1; i <= 6; i++ {
+		p := filepath.Join(music, "Artist", "Album 2", fmt.Sprintf("%02d Song.flac", i))
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		_ = os.WriteFile(p, []byte("x"), 0o644)
+	}
+	_ = os.WriteFile(filepath.Join(music, "Artist", "cover.jpg"), []byte("x"), 0o644)
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{State: `{"state":"playing","revision":5,"playlist_revision":7}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	port := freePort(t)
+	go func() {
+		_ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1", MusicDir: music})
+	}()
+	readStatus(t, dir)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	root := getJSON(t, base+"/api/files")
+	if es, _ := root["entries"].([]any); len(es) != 1 || es[0].(map[string]any)["name"] != "Artist" {
+		t.Fatalf("root: %v", root)
+	}
+	sub := getJSON(t, base+"/api/files?path="+url.QueryEscape("Artist/Album 2"))
+	if es, _ := sub["entries"].([]any); len(es) != 6 {
+		t.Fatalf("album: %v", sub)
+	}
+	if strings.Contains(fmt.Sprint(root, sub), music) {
+		t.Fatal("an absolute path leaked")
+	}
+	if resp, err := testHTTP.Get(base + "/api/files?path=" + url.QueryEscape("../..")); err != nil || resp.StatusCode != 400 {
+		t.Fatalf("traversal: %v %v", resp, err)
+	}
+
+	events := sseEvents(t, base, "enqueue")
+	time.Sleep(300 * time.Millisecond)
+	if code := postJSON(t, base+"/api/enqueue", `{"kind":"folder","provider":"files","id":"Artist","mode":"append"}`); code != 202 {
+		t.Fatalf("enqueue: %d", code)
+	}
+	for deadline := time.After(5 * time.Second); ; {
+		select {
+		case e := <-events:
+			if e["state"] == "done" {
+				if e["done"] != float64(6) || e["total"] != float64(6) {
+					t.Fatalf("%v", e)
+				}
+				q, enq := 0, 0
+				for _, c := range f.Calls() {
+					switch c {
+					case "queue":
+						q++
+					case "queue.enqueue":
+						enq++
+					}
+				}
+				if q != 6 || enq != 6 {
+					t.Fatalf("queue %d enqueue %d (%v)", q, enq, f.Calls())
+				}
+				if code := postJSON(t, base+"/api/enqueue", `{"kind":"folder","provider":"files","id":"../..","mode":"append"}`); code != 403 {
+					t.Fatalf("outside: %d", code)
+				}
+				return
+			}
+			if e["state"] == "failed" {
+				t.Fatalf("%v", e)
+			}
+		case <-deadline:
+			t.Fatal("no final event")
+		}
+	}
+}

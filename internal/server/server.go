@@ -25,6 +25,8 @@ type Config struct {
 	Favorites FavoritesSource
 	// Enqueue runs Play / Add to queue in the background; nil means none.
 	Enqueue EnqueueSource
+	// Files is the music folder for /api/files; nil means off.
+	Files FilesSource
 	// UI is the embedded web interface (webui: index.html, app.css, app.js),
 	// served at the root; nil disables it.
 	UI     fs.FS
@@ -87,6 +89,8 @@ func New(cfg Config) http.Handler {
 	mux.Handle("PUT /api/favorites", s.protect(http.HandlerFunc(s.favoritesSet)))
 	mux.Handle("POST /api/enqueue", s.protect(http.HandlerFunc(s.enqueueStart)))
 	mux.Handle("POST /api/enqueue/cancel", s.protect(http.HandlerFunc(s.enqueueCancel)))
+	mux.Handle("GET /api/files/root", s.protect(http.HandlerFunc(s.filesRoot)))
+	mux.Handle("GET /api/files", s.protect(http.HandlerFunc(s.filesList)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))
 	if cfg.UI != nil {
