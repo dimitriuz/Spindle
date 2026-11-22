@@ -191,6 +191,15 @@ const PREF_VIEW = 'pref:view', PREF_FSIDLE = 'pref:fsidle';
 const getPref = (k, def) => { try { const v = localStorage.getItem(k); return v === null ? def : v; } catch (e) { return def; } };
 const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage may be off */ } };
 
+// Tooltips of the shuffle and repeat buttons: what is set now and what a click does.
+const shuffleTip = (on) => (on ? 'Shuffle: on. Click to turn off' : 'Shuffle: off. Click to turn on');
+const REPEAT_NEXT = { Off: ['repeat all', 'All'], All: ['repeat one', 'One'], One: ['no repeat', 'Off'] };
+function repeatTip(mode) {
+  const m = REPEAT_NEXT[mode] ? mode : 'Off';
+  const now = { Off: 'off', All: 'all tracks', One: 'this track' }[m];
+  return 'Repeat: ' + now + '. Click for ' + REPEAT_NEXT[m][0];
+}
+
 // ---- tile view ----
 const viewModeKey = (...parts) => 'view:' + parts.join(':');
 // placeholderStyle gives a tile without a picture its own colour, the same one every time.
@@ -450,7 +459,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, deviceLabel, EQ_FREQS, EQ_PRESETS, SPEEDS, speedLabel, fmtBytes, fmtUptime, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, shuffleTip, repeatTip, deviceLabel, EQ_FREQS, EQ_PRESETS, SPEEDS, speedLabel, fmtBytes, fmtUptime, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -902,7 +911,10 @@ if (typeof document !== 'undefined') (function () {
     setSpin(st.state);
     setIcon($('b-toggle'), st.state === 'playing' ? 'pause' : 'play');
     $('b-shuffle').classList.toggle('on', !!st.shuffle);
+    $('b-shuffle').title = shuffleTip(!!st.shuffle);
+    $('b-shuffle').setAttribute('aria-pressed', String(!!st.shuffle));
     const rep = String(st.repeat || 'Off');
+    $('b-repeat').title = repeatTip(rep);
     $('b-repeat').classList.toggle('on', rep !== 'Off');
     $('rep1').hidden = rep !== 'One';
     $('b-lyrics').classList.toggle('on', !$('lyrics').hidden);
