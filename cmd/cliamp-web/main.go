@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"cliamp-web/internal/art"
+	"cliamp-web/internal/enqueue"
 	"cliamp-web/internal/favorites"
 	"cliamp-web/internal/ipc"
 	"cliamp-web/internal/server"
@@ -166,6 +167,8 @@ func run(ctx context.Context, rc runConfig) error {
 		artSrc, infoSrc = res, res
 	}
 
+	enq := enqueue.New(conn, server.RestoreURL, cache.HasTrack, func(e enqueue.Event) { hub.Broadcast("enqueue", e) }, time.Now)
+
 	var favSrc server.FavoritesSource
 	if fs, err := favorites.New(rc.DataDir, conn, server.RestoreURL, time.Now); err != nil {
 		logger.Warn("favorites disabled", "err", err)
@@ -174,7 +177,7 @@ func run(ctx context.Context, rc runConfig) error {
 	}
 
 	h := server.New(server.Config{
-		Cache: cache, Runner: conn, Hub: hub, Art: artSrc, Info: infoSrc, Favorites: favSrc,
+		Cache: cache, Runner: conn, Hub: hub, Art: artSrc, Info: infoSrc, Favorites: favSrc, Enqueue: enq,
 		Guard:   server.NewHostGuard(rc.AllowedHosts),
 		Limiter: server.NewLimiter(20, 40, time.Now), UI: webui.FS(), Logger: logger,
 	})

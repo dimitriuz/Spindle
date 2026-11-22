@@ -33,6 +33,7 @@ type Fake struct {
 	subConn  net.Conn
 	lyrics   string
 
+	calls       []string
 	favTracks   []map[string]any // Local "Favorites" playlist
 	favStations map[string]bool  // catalog id -> favorited
 }
@@ -141,7 +142,17 @@ func trimBrace(s string) string {
 	return s
 }
 
+// Calls returns the operations received so far, in order ("track.play", "queue", ...).
+func (f *Fake) Calls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
+}
+
 func (f *Fake) submit(c net.Conn, id, op string, params json.RawMessage) {
+	f.mu.Lock()
+	f.calls = append(f.calls, op)
+	f.mu.Unlock()
 	switch op {
 	case "queue.list":
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j1\",\"operation\":\"queue.list\",\"state\":\"succeeded\",\"result\":{\"ok\":true,\"tracks\":[{\"title\":%q}]}}}\n", id, f.row())

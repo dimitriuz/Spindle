@@ -476,3 +476,121 @@ func TestRunFavoritesRoundTrip(t *testing.T) {
 		t.Fatalf("favorites.json: %v %s", err, b)
 	}
 }
+
+// sseEvents returns a channel of the data payloads of one named SSE event.
+func sseEvents(t *testing.T, url, name string) <-chan map[string]any {
+	t.Helper()
+	resp, err := (&http.Client{}).Get(url + "/api/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	out := make(chan map[string]any, 64)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+		var ev string
+		for sc.Scan() {
+			line := sc.Text()
+			if v, ok := strings.CutPrefix(line, "event: "); ok {
+				ev = v
+			} else if v, ok := strings.CutPrefix(line, "data: "); ok && ev == name {
+				var m map[string]any
+				if json.Unmarshal([]byte(v), &m) == nil {
+					out <- m
+				}
+			}
+		}
+	}()
+	return out
+}
+
+func postJSON(t *testing.T, url, body string) int {
+	t.Helper()
+	req, _ := http.NewRequest("POST", url, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := testHTTP.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestRunEnqueueAppendsAnAlbumAndPlaysATrack(t *testing.T) {
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{
+		State: `{"state":"playing","revision":5,"playlist_revision":7}`,
+		Track: `{"title":"Known","path":"/fake/known.flac"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	port := freePort(t)
+	go func() { _ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
+	readStatus(t, dir)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	events := sseEvents(t, base, "enqueue")
+	time.Sleep(300 * time.Millisecond)
+
+	if code := postJSON(t, base+"/api/enqueue", `{"kind":"album","provider":"navidrome","id":"al1","mode":"append"}`); code != 202 {
+		t.Fatalf("append: %d", code)
+	}
+	var last map[string]any
+	for deadline := time.After(5 * time.Second); ; {
+		select {
+		case e := <-events:
+			last = e
+			if e["state"] == "done" || e["state"] == "failed" {
+				goto appended
+			}
+		case <-deadline:
+			t.Fatalf("no final event, last %v", last)
+		}
+	}
+appended:
+	if last["state"] != "done" || last["done"] != float64(7) || last["total"] != float64(7) {
+		t.Fatalf("album al1 has 7 tracks: %v", last)
+	}
+	queued := 0
+	for _, c := range f.Calls() {
+		if c == "queue" {
+			queued++
+		}
+	}
+	if queued != 7 {
+		t.Fatalf("7 queue calls, got %d (%v)", queued, f.Calls())
+	}
+
+	// Play on a track the player knows: clear, then play
+	before := len(f.Calls())
+	if code := postJSON(t, base+"/api/enqueue", `{"kind":"track","mode":"play","track":{"title":"Known","path":"/fake/known.flac"}}`); code != 202 {
+		t.Fatalf("play: %d", code)
+	}
+	for deadline := time.After(5 * time.Second); ; {
+		select {
+		case e := <-events:
+			if e["state"] == "done" {
+				var calls []string
+				for _, c := range f.Calls()[before:] {
+					if c == "queue.clear" || c == "track.play" { // the bridge also refreshes its queue cache meanwhile
+						calls = append(calls, c)
+					}
+				}
+				if len(calls) != 2 || calls[0] != "queue.clear" || calls[1] != "track.play" {
+					t.Fatalf("calls: %v", calls)
+				}
+				// a path nobody told the bridge about is refused
+				if code := postJSON(t, base+"/api/enqueue", `{"kind":"track","mode":"append","track":{"title":"x","path":"/etc/passwd"}}`); code != 403 {
+					t.Fatalf("untrusted: %d", code)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("no final event for play")
+		}
+	}
+}
