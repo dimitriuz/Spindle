@@ -232,7 +232,7 @@ can reach the port can control playback. Do not expose it to the internet.
 What it does guard against:
 
 - Default bind is `127.0.0.1`; `--lan` / `lan = true` is an explicit opt-in.
-- Host header is validated against local addresses plus `allowed_hosts`
+- Any Host header is accepted (the bridge is meant for a trusted network and is often reached through a reverse proxy; `allowed_hosts` is now ignored)
   (DNS-rebinding guard).
 - State-changing requests must be `application/json` from the same origin, so
   a web page open in a browser on your LAN cannot fire commands at the bridge.

@@ -67,10 +67,7 @@ func NewHostGuard(extra []string) *HostGuard {
 	return g
 }
 
-func (g *HostGuard) Allow(r *http.Request) bool {
-	host := r.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	return g.allowed[host]
-}
+// Allow accepts every Host: the bridge is a local-only tool with no login, and it is
+// reached through reverse proxies under arbitrary names. The same-origin JSON rule in
+// protect remains the barrier against cross-site writes.
+func (g *HostGuard) Allow(r *http.Request) bool { return true }

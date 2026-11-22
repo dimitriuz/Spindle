@@ -91,17 +91,6 @@ func TestArt400OnBadKindOrMissingPath(t *testing.T) {
 	}
 }
 
-func TestArtRouteIsBehindTheGuard(t *testing.T) {
-	h := artServer(t, &fakeArt{img: &art.Image{Data: pngHead, ContentType: "image/png", Key: "k"}})
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/art/cover?path=%2Fx", nil)
-	r.Host = "evil.example.org"
-	h.ServeHTTP(rec, r)
-	if rec.Code != 400 {
-		t.Fatalf("foreign Host: %d", rec.Code)
-	}
-}
-
 func TestArtWithoutResolverIsNoArt(t *testing.T) {
 	cfg := guardedConfig(t)
 	if rec := artGet(New(cfg), "/api/art/cover?path=%2Fx", nil); rec.Code != 404 {
@@ -172,13 +161,6 @@ func TestTrackInfo404AndBadInput(t *testing.T) {
 	}
 	if rec := artGet(New(guardedConfig(t)), "/api/trackinfo?path=%2Fx", nil); rec.Code != 404 {
 		t.Fatalf("no source: %d", rec.Code)
-	}
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/trackinfo?path=%2Fx", nil)
-	r.Host = "evil.example.org"
-	h.ServeHTTP(rec, r)
-	if rec.Code != 400 {
-		t.Fatalf("guard: %d", rec.Code)
 	}
 }
 
@@ -254,16 +236,5 @@ func TestItemArt404HasNoCredentialsAndNilSourceIs404(t *testing.T) {
 	}
 	if rec := artGet(New(guardedConfig(t)), "/api/art/item?provider=navidrome&kind=album&id=x", nil); rec.Code != 404 {
 		t.Fatalf("no source: %d", rec.Code)
-	}
-}
-
-func TestItemArtRouteIsGuarded(t *testing.T) {
-	h := itemServer(t, &fakeItemArt{})
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/art/item?provider=navidrome&kind=album&id=x", nil)
-	r.Host = "evil.example.org"
-	h.ServeHTTP(rec, r)
-	if rec.Code != 400 {
-		t.Fatalf("%d", rec.Code)
 	}
 }

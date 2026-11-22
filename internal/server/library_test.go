@@ -126,18 +126,6 @@ func TestLibraryListingsCached(t *testing.T) {
 	}
 }
 
-func TestLibrarySitsBehindGuard(t *testing.T) {
-	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{}`)}}
-	h := New(libConfig(t, fr))
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/library/local/albums", nil)
-	r.Host = "evil.example.org"
-	h.ServeHTTP(rec, r)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("library must sit behind protect, got %d", rec.Code)
-	}
-}
-
 func TestLibraryAlbumTracksParams(t *testing.T) {
 	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"tracks":[]}`)}}
 	h := New(libConfig(t, fr))

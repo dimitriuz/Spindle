@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -56,16 +55,5 @@ func TestFolderArtStatuses(t *testing.T) {
 	}
 	if rec := artGet(New(guardedConfig(t)), "/api/files/art?path=x", nil); rec.Code != 404 {
 		t.Fatalf("off: %d", rec.Code)
-	}
-}
-
-func TestFolderArtIsGuarded(t *testing.T) {
-	h := folderServer(t, &fakeFolderArt{})
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/files/art?path=x", nil)
-	r.Host = "evil.example.org"
-	h.ServeHTTP(rec, r)
-	if rec.Code != 400 {
-		t.Fatalf("%d", rec.Code)
 	}
 }

@@ -25,26 +25,6 @@ func TestNoTokenNeeded(t *testing.T) {
 	}
 }
 
-func TestHostGuard(t *testing.T) {
-	cfg := guardedConfig(t)
-	cfg.Guard = NewHostGuard([]string{"cliamp.home.lan"})
-	h := New(cfg)
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/state", nil)
-	r.Host = "evil.example.com"
-	h.ServeHTTP(rec, r)
-	if rec.Code != 400 {
-		t.Fatalf("want 400 on foreign Host, got %d", rec.Code)
-	}
-	rec = httptest.NewRecorder()
-	r2 := httptest.NewRequest("GET", "/api/state", nil)
-	r2.Host = "cliamp.home.lan"
-	h.ServeHTTP(rec, r2)
-	if rec.Code != 200 {
-		t.Fatalf("allowed host: got %d", rec.Code)
-	}
-}
-
 // With no secret to hold, the CSRF barrier is: JSON only, same origin only.
 func TestPOSTMustBeJSON(t *testing.T) {
 	cfg := guardedConfig(t)

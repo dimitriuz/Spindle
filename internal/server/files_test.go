@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -82,17 +81,6 @@ func TestFilesOffMeans404Everywhere(t *testing.T) {
 		if rec := artGet(h, p, nil); rec.Code != 404 {
 			t.Fatalf("%s: %d", p, rec.Code)
 		}
-	}
-}
-
-func TestFilesIsGuarded(t *testing.T) {
-	h := filesServer(t, &fakeFiles{})
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/files", nil)
-	r.Host = "evil.example.org"
-	h.ServeHTTP(rec, r)
-	if rec.Code != 400 {
-		t.Fatalf("%d", rec.Code)
 	}
 }
 
