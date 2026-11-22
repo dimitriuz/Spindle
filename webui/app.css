@@ -44,13 +44,23 @@ body[data-tab=browse] #tabs [data-tab=browse], body[data-tab=search] #tabs [data
 #b-repeat b { position: absolute; right: 6px; bottom: 6px; font-size: 11px; color: var(--accent); }
 
 /* Now Playing */
-#player { display: flex; flex-direction: column; gap: 16px; align-items: center; }
+#player { display: flex; flex-direction: column; gap: 16px; align-items: center; overflow-x: clip; } /* the peeking disc's shadow must not widen the page */
 .cover { width: min(100%, 44vh, 420px); aspect-ratio: 1; background: var(--art); border-radius: 12px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
 .meta { display: contents; }
 .meta > * { width: 100%; text-align: center; }
 .disc-slide { position: absolute; inset: 0; z-index: 0; }
 .cover .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cover .art[hidden], .cover .ph[hidden] { display: none; }
+/* The disc peeks out from behind the cover (narrow screens, normal and fullscreen):
+   the cover gives up a little width so the pair stays centred. */
+.cover.peek { overflow: visible; background: none; width: min(72%, 44vh, 300px); translate: -17.5% 0; }
+.cover.peek #art-cover, .cover.peek .ph { z-index: 1; border-radius: 12px; }
+.cover.peek .ph { background: var(--art); }
+.cover.peek #art-cover { box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.cover.peek::after { display: none; }
+.cover.peek .disc-slide { transform: translateX(0); transition: transform .7s cubic-bezier(.3,.7,.2,1); }
+.cover.peek.out .disc-slide { transform: translateX(35%); }
+.cover.peek.swap .disc-slide { transition-duration: .32s; }
 .cover.has-disc { cursor: pointer; }
 .cover.has-disc::after { content: ''; position: absolute; right: 10px; bottom: 10px; width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); background: radial-gradient(circle, rgba(255,255,255,.85) 0 18%, rgba(0,0,0,.45) 20%); box-shadow: 0 1px 6px rgba(0,0,0,.5); pointer-events: none; }
 .cover.show-disc { background: transparent; overflow: visible; }
@@ -60,7 +70,7 @@ body[data-tab=browse] #tabs [data-tab=browse], body[data-tab=search] #tabs [data
 .artist-line { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: var(--art); flex: none; }
 .avatar[hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) { .cover .art { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .cover .art, .cover.peek .disc-slide { transition: none; } }
 .ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 .ph svg, .idle-art svg { width: 30%; height: 30%; color: var(--dim); }
 .meta h1 { font-size: 22px; line-height: 1.25; overflow-wrap: anywhere; }
@@ -106,12 +116,6 @@ input[type=range] { flex: 1; height: 44px; background: transparent; accent-color
 #now.fs #art-cover, #now.fs .cover .ph { border-radius: 12px; }
 #now.fs #art-cover { box-shadow: 0 14px 44px rgba(0,0,0,.55); }
 #now.fs .cover .ph { background: var(--art); z-index: 1; }
-/* one face at a time: the disc peeks out from behind the cover */
-#now.fs .cover.peek { overflow: visible; translate: -17.5% 0; }
-#now.fs .cover.peek #art-cover, #now.fs .cover.peek .ph { z-index: 1; }
-#now.fs .cover.peek .disc-slide { transform: translateX(0); transition: transform .7s cubic-bezier(.3,.7,.2,1); }
-#now.fs .cover.peek.out .disc-slide { transform: translateX(35%); }
-#now.fs .cover.peek.swap .disc-slide { transition-duration: .32s; }
 /* wide: cover and disc side by side */
 #now.fs[data-art=both] .cover { width: auto; aspect-ratio: auto; overflow: visible; display: flex; justify-content: center; gap: 28px; cursor: default; }
 #now.fs[data-art=both] .cover::after { display: none; }
@@ -120,7 +124,6 @@ input[type=range] { flex: 1; height: 44px; background: transparent; accent-color
   #now.fs .transport, #now.fs .next { display: none; }
   #now.fs #player { gap: 6px; }
 }
-@media (prefers-reduced-motion: reduce) { #now.fs .cover.peek .disc-slide { transition: none; } }
 
 /* Lists */
 .head { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 8px; }

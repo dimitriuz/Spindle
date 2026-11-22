@@ -352,10 +352,10 @@ if (typeof document !== 'undefined') (function () {
   // wide window shows both; on a narrow one the cover with the disc peeking
   // out from behind it, or the disc alone after a tap.
   function paintArt() {
-    const box = $('cover'), both = fsBoth(), peekable = fsOn() && !both;
+    const box = $('cover'), both = fsBoth(), peekable = !both;
     const discOnly = art.showDisc && art.disc && !both;
     const coverShown = art.coverOk && !discOnly;
-    const discShown = art.disc && (discOnly || both || (peekable && !discOnly));
+    const discShown = art.disc; // behind the cover, beside it, or alone: always drawn when there is one
     const flippable = art.disc && !both;
     box.classList.toggle('has-disc', flippable);
     box.classList.toggle('show-disc', discOnly);
@@ -380,8 +380,8 @@ if (typeof document !== 'undefined') (function () {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const discSlide = () => $('art-disc').parentElement;
   const isPlaying = () => !!(S.state && S.state.state === 'playing');
-  // Narrow fullscreen shows the disc peeking behind the cover; every other
-  // layout shows it as a face of its own.
+  // Narrow layouts (normal and fullscreen) show the disc peeking behind the
+  // cover; the wide fullscreen layout shows it beside the cover.
   const discPeeks = () => $('cover').classList.contains('peek');
 
   // The disc leaves: back under the cover, or sliding off to the side the

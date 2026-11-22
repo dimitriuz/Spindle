@@ -54,8 +54,9 @@ the vanilla page only.
 
 ## Artwork
 
-Now Playing shows the album cover, a small artist photo next to the artist
-name, and the album's disc. Tap the cover to flip it to the disc; the disc
+Now Playing shows the album cover with the disc peeking out from behind it, and
+a small artist photo next to the artist name. The disc slides out when playback
+starts and back in when it stops. Tap the cover to flip to the disc; the disc
 spins at 33 1/3 rpm while playing, brakes when you pause and coasts to a stop
 when playback stops.
 
