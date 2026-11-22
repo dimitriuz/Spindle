@@ -514,3 +514,10 @@ html[data-skin^=pixel] #now.fs .meta h1 { font-size: clamp(16px, 2.2vw, 46px); l
 .themebtn svg { width: 22px; height: 22px; }
 body.fs-open .themebtn { display: none; }
 @media (min-width: 900px) { .themebtn { position: static; grid-area: 1 / 2; justify-self: end; align-self: center; margin-right: 16px; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* Bottom tabs: icons share one baseline whether a label takes one line or two (long names, wide fonts) */
+@media (max-width: 899px) {
+  #tabs a { justify-content: flex-start; padding: 9px 1px 0; font-size: 11px; line-height: 1.2; text-align: center; white-space: nowrap; }
+  html[data-skin^=pixel] #tabs a { white-space: normal; font-size: 7px; line-height: 1.5; }
+  html[data-skin=hifi] #tabs a, html[data-skin=psx] #tabs a { font-size: 9px; letter-spacing: .02em; }
+}
