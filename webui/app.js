@@ -93,6 +93,15 @@ function techLine(info) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// ---- skipping ----
+// albumKey identifies the disc a track belongs to: same key, same disc.
+const albumKey = (song) => (song && song.album ? song.album + '|' + (song.year || '') : '');
+// trackDir is which way the player moved through the queue: -1 for previous.
+const trackDir = (prevIdx, idx) => (prevIdx != null && idx < prevIdx ? -1 : 1);
+// skipDip: a skip makes a turning platter stumble to a third of its speed (the
+// motor then brings it back); one that is already stopping is left alone.
+const skipDip = (w) => (w > 5 ? w * 0.35 : w);
+
 // position is the song position in seconds at time now, moved on from the
 // last snapshot while playing. cliamp counts and seeks in seconds.
 function position(s, now) {
@@ -185,7 +194,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -327,7 +336,8 @@ if (typeof document !== 'undefined') (function () {
   // The platter keeps turning (or coasting) whichever side is showing, like
   // the real thing; `art` holds its state between animation frames.
   const art = { path: null, seq: 0, coverOk: false, disc: false, showDisc: false, flipping: false,
-    angle: 0, w: 0, a: 0, target: 0, k: 2.2, last: 0, raf: 0, info: null, pref: false };
+    angle: 0, w: 0, a: 0, target: 0, k: 2.2, last: 0, raf: 0, info: null, pref: false,
+    albumKey: '', idx: null, chain: Promise.resolve(), swapping: false };
   try { art.pref = sessionStorage.getItem('cliamp-disc') === '1'; } catch (e) { /* storage may be off */ }
   const fsOn = () => $('now').classList.contains('fs');
   const fsBoth = () => fsOn() && $('now').dataset.art === 'both';
@@ -367,25 +377,83 @@ if (typeof document !== 'undefined') (function () {
     $('next').hidden = !(n && n.title);
     if (n && n.title) $('next').textContent = 'Next: ' + n.title + (n.artist ? ' — ' + n.artist : '');
   }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const discSlide = () => $('art-disc').parentElement;
+  const isPlaying = () => !!(S.state && S.state.state === 'playing');
+  // Narrow fullscreen shows the disc peeking behind the cover; every other
+  // layout shows it as a face of its own.
+  const discPeeks = () => $('cover').classList.contains('peek');
+
+  // The disc leaves: back under the cover, or sliding off to the side the
+  // queue is moving away from (next goes left, previous right).
+  async function retractDisc(dir) {
+    if (reducedMotion() || $('art-disc').hidden) return;
+    if (discPeeks()) { $('cover').classList.add('swap'); $('cover').classList.remove('out'); await sleep(340); return; }
+    try {
+      await discSlide().animate([{ opacity: 1, transform: 'translateX(0) scale(1)' }, { opacity: 0, transform: 'translateX(' + (-dir * 16) + '%) scale(.86)' }],
+        { duration: 260, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).finished;
+    } catch (e) { /* cancelled */ }
+  }
+  // ...and the next one arrives.
+  async function extendDisc(dir) {
+    if (reducedMotion()) { $('cover').classList.toggle('out', isPlaying()); }
+    else if (discPeeks()) { $('cover').classList.toggle('out', isPlaying()); await sleep(340); }
+    else {
+      try {
+        await discSlide().animate([{ opacity: 0, transform: 'translateX(' + (dir * 16) + '%) scale(.86)' }, { opacity: 1, transform: 'translateX(0) scale(1)' }],
+          { duration: 320, easing: 'cubic-bezier(0,0,.2,1)' }).finished;
+      } catch (e) { /* cancelled */ }
+    }
+    $('cover').classList.remove('swap');
+    discSlide().getAnimations().forEach((an) => an.cancel()); // drop the hold from retractDisc
+  }
+  // Disc changes happen one at a time and in order; a change that has been
+  // overtaken by a newer track is skipped, the newest one does the work.
+  function changeDisc(seq, dir, url) {
+    art.chain = art.chain.then(async () => {
+      if (seq !== art.seq) return;
+      art.swapping = true;
+      try {
+        await retractDisc(dir);
+        if (url) { $('art-disc').src = url; } else { art.disc = false; art.showDisc = false; art.w = art.a = 0; }
+        paintArt();
+        if (url) await extendDisc(dir);
+        else { $('cover').classList.remove('swap'); discSlide().getAnimations().forEach((an) => an.cancel()); }
+      } finally { art.swapping = false; setSpin(S.state && S.state.state); }
+    });
+  }
+
   function updateArt(song) {
     const p = (song && song.path) || '';
     if (p === art.path) return;
     art.path = p;
     const seq = ++art.seq;
     if (!p) {
-      art.coverOk = art.disc = art.showDisc = false; art.info = null;
+      art.coverOk = art.disc = art.showDisc = false; art.info = null; art.albumKey = ''; art.idx = null;
       $('artist-img').hidden = true; $('fs-bg').style.backgroundImage = '';
       paintArt(); renderTech(); setSpin(null);
       return;
     }
+    const key = albumKey(song), idx = curIndex(S.state), dir = trackDir(art.idx, idx);
+    const sameDisc = art.disc && key !== '' && key === art.albumKey;
+    art.albumKey = key;
+    art.idx = idx;
     // the old pictures stay up until the new ones arrive (or turn out not to exist)
     loadImg(artUrl('cover', p), seq,
       (u) => { $('art-cover').src = u; art.coverOk = true; $('fs-bg').style.backgroundImage = 'url("' + u + '")'; paintArt(); },
       () => { art.coverOk = false; $('fs-bg').style.backgroundImage = ''; paintArt(); });
     loadImg(artUrl('artist', p), seq, (u) => { $('artist-img').src = u; $('artist-img').hidden = false; }, () => { $('artist-img').hidden = true; });
-    loadImg(artUrl('disc', p), seq,
-      (u) => { $('art-disc').src = u; if (!art.disc) art.showDisc = art.pref; art.disc = true; paintArt(); setSpin(S.state && S.state.state); },
-      () => { art.disc = false; art.showDisc = false; art.w = art.a = 0; paintArt(); });
+    if (sameDisc) {
+      // the same disc: no new picture, the platter just stumbles and recovers
+      if (isPlaying() && !reducedMotion()) { art.w = skipDip(art.w); art.a = 0; setSpin('playing'); }
+    } else {
+      loadImg(artUrl('disc', p), seq,
+        (u) => {
+          if (!art.disc) { $('art-disc').src = u; art.showDisc = art.pref; art.disc = true; paintArt(); setSpin(S.state && S.state.state); }
+          else { if (isPlaying() && !reducedMotion()) { art.w = skipDip(art.w); art.a = 0; } changeDisc(seq, dir, u); }
+        },
+        () => { if (art.disc) changeDisc(seq, dir, null); else { art.showDisc = false; paintArt(); } });
+    }
     const dur = Number(S.state && S.state.duration) || 0;
     api.get('/api/trackinfo?path=' + encodeURIComponent(p) + (dur ? '&duration=' + dur : ''))
       .then((info) => { if (seq === art.seq) { art.info = info; renderTech(); } })
@@ -409,7 +477,7 @@ if (typeof document !== 'undefined') (function () {
     art.flipping = false;
   }
   function setSpin(state) {
-    $('cover').classList.toggle('out', state === 'playing'); // the peeking disc slides out while playing
+    if (!art.swapping) $('cover').classList.toggle('out', state === 'playing'); // the peeking disc slides out while playing
     const plan = spinPlan(state, reducedMotion());
     art.target = plan.target;
     art.k = plan.k;

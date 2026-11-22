@@ -111,6 +111,7 @@ input[type=range] { flex: 1; height: 44px; background: transparent; accent-color
 #now.fs .cover.peek #art-cover, #now.fs .cover.peek .ph { z-index: 1; }
 #now.fs .cover.peek .disc-slide { transform: translateX(0); transition: transform .7s cubic-bezier(.3,.7,.2,1); }
 #now.fs .cover.peek.out .disc-slide { transform: translateX(35%); }
+#now.fs .cover.peek.swap .disc-slide { transition-duration: .32s; }
 /* wide: cover and disc side by side */
 #now.fs[data-art=both] .cover { width: auto; aspect-ratio: auto; overflow: visible; display: flex; justify-content: center; gap: 28px; cursor: default; }
 #now.fs[data-art=both] .cover::after { display: none; }

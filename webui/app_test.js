@@ -209,6 +209,32 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.fsLayout(0, 0), 'single');
   });
 
+  await ok('albumKey says when two tracks share a disc', () => {
+    assert.equal(A.albumKey({ album: 'Let There Be Cello', year: 2018, artist: 'x' }), A.albumKey({ album: 'Let There Be Cello', year: 2018, artist: 'y' }), 'compilation tracks share the disc');
+    assert.notEqual(A.albumKey({ album: 'A', year: 2018 }), A.albumKey({ album: 'B', year: 2018 }));
+    assert.notEqual(A.albumKey({ album: 'A', year: 2018 }), A.albumKey({ album: 'A', year: 2020 }), 'same title, other release');
+    assert.equal(A.albumKey({ title: 'no album' }), '', 'unknown album never counts as the same');
+    assert.equal(A.albumKey(null), '');
+  });
+
+  await ok('trackDir: previous is -1, next and everything else +1', () => {
+    assert.equal(A.trackDir(3, 2), -1);
+    assert.equal(A.trackDir(2, 3), 1);
+    assert.equal(A.trackDir(undefined, 3), 1);
+    assert.equal(A.trackDir(3, 3), 1);
+    assert.equal(A.trackDir(-1, 0), 1);
+  });
+
+  await ok('skipDip slows a turning platter to a third and leaves a resting one alone', () => {
+    assert.ok(Math.abs(A.skipDip(200) - 70) < 1e-9);
+    assert.equal(A.skipDip(0), 0);
+    assert.equal(A.skipDip(3), 3, 'a platter that is stopping is left to coast');
+    // and the motor brings it back: from the dip to speed within ~2 s, smoothly
+    let m = { w: A.skipDip(200), a: 0 };
+    for (let i = 0; i < 120; i++) m = A.spinStep(m, 200, 4, 1 / 60);
+    assert.ok(m.w > 199, 'recovers: ' + m.w);
+  });
+
   await ok('moveTarget stops at the ends', () => {
     assert.deepEqual(A.moveTarget(0, 3, -1), null);
     assert.deepEqual(A.moveTarget(1, 3, 1), { from: 1, to: 2 });
