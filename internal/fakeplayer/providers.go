@@ -140,6 +140,9 @@ func (f *Fake) providerOps(c net.Conn, id, op string, params json.RawMessage) bo
 	ok := func(result string) {
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"jx\",\"operation\":%q,\"state\":\"succeeded\",\"result\":%s}}\n", id, op, result)
 	}
+	if f.favoritesOp(c, id, op, p.Provider, p.Playlist, p.Offset, p.Limit, ok, func(d string) { failJob(c, id, op, d) }) {
+		return true
+	}
 	switch op {
 	case "provider.list":
 		b, _ := json.Marshal(map[string]any{"ok": true, "providers": providerFixtures})

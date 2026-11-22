@@ -32,6 +32,9 @@ type Fake struct {
 	rowTitle string
 	subConn  net.Conn
 	lyrics   string
+
+	favTracks   []map[string]any // Local "Favorites" playlist
+	favStations map[string]bool  // catalog id -> favorited
 }
 
 func Start(dir string, opts Options) (*Fake, error) {
@@ -160,6 +163,9 @@ func (f *Fake) submit(c net.Conn, id, op string, params json.RawMessage) {
 			return
 		}
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"jt\",\"operation\":%q,\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id, op)
+	case "playlist.bookmark":
+		f.bookmark(params)
+		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"jb\",\"operation\":%q,\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id, op)
 	case "lyrics":
 		if f.lyrics == "" {
 			failJob(c, id, op, "no lyrics found")

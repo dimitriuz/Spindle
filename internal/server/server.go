@@ -21,6 +21,8 @@ type Config struct {
 	Art ArtSource
 	// Info reports codec/bitrate for /api/trackinfo; nil means none.
 	Info InfoSource
+	// Favorites is the favorites list for /api/favorites; nil means none.
+	Favorites FavoritesSource
 	// UI is the embedded web interface (webui: index.html, app.css, app.js),
 	// served at the root; nil disables it.
 	UI     fs.FS
@@ -79,6 +81,8 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
 	mux.Handle("GET /api/art/{kind}", s.protect(http.HandlerFunc(s.art)))
 	mux.Handle("GET /api/trackinfo", s.protect(http.HandlerFunc(s.trackInfo)))
+	mux.Handle("GET /api/favorites", s.protect(http.HandlerFunc(s.favoritesList)))
+	mux.Handle("PUT /api/favorites", s.protect(http.HandlerFunc(s.favoritesSet)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))
 	if cfg.UI != nil {

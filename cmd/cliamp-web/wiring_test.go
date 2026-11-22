@@ -414,3 +414,65 @@ func TestRunServesTrackInfoForLocalFLAC(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+func putJSON(t *testing.T, url, body string) (int, map[string]any) {
+	t.Helper()
+	req, err := http.NewRequest("PUT", url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := testHTTP.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var m map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&m)
+	return resp.StatusCode, m
+}
+
+func TestRunFavoritesRoundTrip(t *testing.T) {
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{State: `{"state":"playing","revision":5,"playlist_revision":7}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	port := freePort(t)
+	go func() { _ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
+	readStatus(t, dir)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	track := `{"kind":"track","favorite":true,"track":{"title":"Song","artist":"Band","path":"https://nd.lan/rest/stream?id=s1","provider_meta":{"navidrome.id":"s1"}}}`
+	for name, body := range map[string]string{
+		"track": track,
+		"radio": `{"kind":"radio","provider":"radio","id":"c:2","favorite":true}`,
+		"album": `{"kind":"album","provider":"navidrome","id":"al1","title":"Album","subtitle":"Band","favorite":true}`,
+	} {
+		code, m := putJSON(t, base+"/api/favorites", body)
+		if code != 200 || m["favorite"] != true {
+			t.Fatalf("%s: %d %v", name, code, m)
+		}
+	}
+	got := getJSON(t, base+"/api/favorites")
+	items, _ := got["items"].([]any)
+	kinds := map[string]bool{}
+	for _, it := range items {
+		kinds[it.(map[string]any)["kind"].(string)] = true
+	}
+	if len(items) != 3 || !kinds["track"] || !kinds["radio"] || !kinds["album"] {
+		t.Fatalf("list: %v", got)
+	}
+	// toggling off through the API removes it from every home
+	code, m := putJSON(t, base+"/api/favorites", strings.Replace(track, `"favorite":true`, `"favorite":false`, 1))
+	if code != 200 || m["favorite"] != false {
+		t.Fatalf("off: %d %v", code, m)
+	}
+	// the album survives a bridge restart: it is in the file
+	if b, err := os.ReadFile(filepath.Join(dir, "favorites.json")); err != nil || !strings.Contains(string(b), `"al1"`) {
+		t.Fatalf("favorites.json: %v %s", err, b)
+	}
+}
