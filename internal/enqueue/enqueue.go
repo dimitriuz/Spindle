@@ -53,6 +53,9 @@ type Service struct {
 	emit    func(Event)
 	now     func() time.Time
 
+	// how often, and for how long, to wait for a started track to be playing
+	pollEvery, playTimeout time.Duration
+
 	mu      sync.Mutex
 	running bool
 	cancel  context.CancelFunc
@@ -70,7 +73,7 @@ func New(r ipc.OpRunner, restore func(string) string, known func(string) bool, e
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{r: r, restore: restore, known: known, emit: emit, now: now}
+	return &Service{r: r, restore: restore, known: known, emit: emit, now: now, pollEvery: 50 * time.Millisecond, playTimeout: 15 * time.Second}
 }
 
 // Start validates the request and runs it in the background.
@@ -248,6 +251,11 @@ func (s *Service) work(ctx context.Context, req Request) {
 			}
 			done = 1
 			rest = tracks[1:]
+			// cliamp needs a few seconds to start the stream. While it still reports
+			// "stopped", each track.queue counts as an append that moves the current
+			// track, so the page flickers through every track and playback ends up on
+			// the last one. Wait for the first track to really play.
+			s.waitPlaying(ctx)
 		}
 	}
 	for _, t := range rest {
@@ -309,4 +317,24 @@ func (s *Service) listTracks(ctx context.Context, req Request) ([]map[string]any
 		all = append(all, ts...)
 	}
 	return all, nil
+}
+
+// waitPlaying blocks until the player reports "playing", the wait times out
+// (the rest is queued anyway) or ctx ends.
+func (s *Service) waitPlaying(ctx context.Context) {
+	for tries := int(s.playTimeout / s.pollEvery); tries > 0; tries-- {
+		if resp, err := s.r.Call(ctx, "state.get", nil); err == nil {
+			var sn struct {
+				State string `json:"state"`
+			}
+			if json.Unmarshal(resp.Snapshot, &sn) == nil && sn.State == "playing" {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(s.pollEvery):
+		}
+	}
 }

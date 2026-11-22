@@ -24,6 +24,12 @@ type fakeCliamp struct {
 	failErr   error
 	queueN    int
 	gate      chan struct{} // when set, every "queue" call waits for a token
+	// playback model: after track.play the player says "stopped" for startPolls
+	// state polls, then "playing"
+	startPolls          int
+	polls               int
+	playRequested       bool
+	queuedBeforePlaying int // track.queue calls that arrived while it was not playing
 }
 
 func trk(title, path string) map[string]any {
@@ -38,9 +44,20 @@ func tracks(prefix string, n int) []map[string]any {
 	return out
 }
 
-func (f *fakeCliamp) Call(context.Context, string, any) (*ipc.Response, error) {
-	return &ipc.Response{OK: true}, nil
+func (f *fakeCliamp) Call(_ context.Context, method string, _ any) (*ipc.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	state := "stopped"
+	if method == "state.get" && f.playRequested {
+		f.polls++
+		if f.polls > f.startPolls {
+			state = "playing"
+		}
+	}
+	return &ipc.Response{OK: true, Snapshot: json.RawMessage(`{"state":"` + state + `"}`)}, nil
 }
+
+func (f *fakeCliamp) playing() bool { return f.playRequested && f.polls > f.startPolls }
 
 func page(rows []map[string]any, p map[string]any, field string) (*ipc.Job, error) {
 	off, lim := intOf(p["offset"]), intOf(p["limit"])
@@ -90,6 +107,7 @@ func (f *fakeCliamp) SubmitJob(ctx context.Context, op string, params any) (*ipc
 		}
 		return page(rows, p, "albums")
 	case "queue.clear":
+		f.playRequested, f.polls = false, 0
 		f.calls = append(f.calls, "clear")
 	case "track.queue":
 		f.queueN++
@@ -97,8 +115,12 @@ func (f *fakeCliamp) SubmitJob(ctx context.Context, op string, params any) (*ipc
 			return nil, f.failErr
 		}
 		tr, _ := p["track"].(map[string]any)
+		if f.playRequested && !f.playing() {
+			f.queuedBeforePlaying++
+		}
 		f.calls = append(f.calls, "queue:"+tr["path"].(string))
 	case "track.play":
+		f.playRequested = true
 		tr, _ := p["track"].(map[string]any)
 		f.calls = append(f.calls, "play:"+tr["title"].(string)+"@"+tr["path"].(string))
 	case "provider.load_album":
@@ -370,5 +392,67 @@ func TestEventsNeverCarryCredentials(t *testing.T) {
 		if strings.Contains(string(b), secret) {
 			t.Fatalf("events leak %q: %s", secret, b)
 		}
+	}
+}
+
+// cliamp needs a few seconds to start a stream after track.play. While it is
+// still "stopped", every track.queue is treated as an append that moves the
+// current-track cursor, so the page flickers through every track and playback
+// finally starts on the LAST one. The rest of an artist must wait until the
+// first track is really playing.
+func TestArtistPlayWaitsUntilPlayingBeforeQueuingTheRest(t *testing.T) {
+	f := &fakeCliamp{
+		artists:    map[string][]string{"ar": {"a1"}},
+		albums:     map[string][]map[string]any{"a1": tracks("x", 6)},
+		startPolls: 7,
+	}
+	s, ev, _ := newSvc(f, nil)
+	s.pollEvery, s.playTimeout = time.Millisecond, 2*time.Second
+	run(t, s, Request{Kind: "artist", Mode: "play", Provider: "p", ID: "ar"})
+	if f.queuedBeforePlaying != 0 {
+		t.Fatalf("%d tracks were queued while the player was still starting", f.queuedBeforePlaying)
+	}
+	if got := len(f.snapshot()); got != 1+1+5 { // clear, play, five queued
+		t.Fatalf("calls: %v", f.snapshot())
+	}
+	if l := ev.last(); l.State != "done" || l.Done != 6 || l.Total != 6 {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func TestWaitForPlaybackIsBoundedAndThenCarriesOn(t *testing.T) {
+	f := &fakeCliamp{
+		artists:    map[string][]string{"ar": {"a1"}},
+		albums:     map[string][]map[string]any{"a1": tracks("x", 3)},
+		startPolls: 1 << 30, // never starts
+	}
+	s, ev, _ := newSvc(f, nil)
+	s.pollEvery, s.playTimeout = time.Millisecond, 30*time.Millisecond
+	start := time.Now()
+	run(t, s, Request{Kind: "artist", Mode: "play", Provider: "p", ID: "ar"})
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("waiting for playback must be bounded")
+	}
+	if l := ev.last(); l.State != "done" || l.Done != 3 {
+		t.Fatalf("the rest is still queued after the wait gives up: %+v", l)
+	}
+}
+
+func TestCancelWhileWaitingForPlayback(t *testing.T) {
+	f := &fakeCliamp{
+		artists:    map[string][]string{"ar": {"a1"}},
+		albums:     map[string][]map[string]any{"a1": tracks("x", 3)},
+		startPolls: 1 << 30,
+	}
+	s, ev, _ := newSvc(f, nil)
+	s.pollEvery, s.playTimeout = 5*time.Millisecond, time.Minute
+	if err := s.Start(Request{Kind: "artist", Mode: "play", Provider: "p", ID: "ar"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(60 * time.Millisecond)
+	s.Cancel()
+	s.Wait()
+	if l := ev.last(); l.State != "cancelled" {
+		t.Fatalf("%+v", l)
 	}
 }
