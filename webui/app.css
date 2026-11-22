@@ -53,7 +53,8 @@ body[data-tab=browse] #tabs [data-tab=browse], body[data-tab=search] #tabs [data
 .cover .art[hidden], .cover .ph[hidden] { display: none; }
 /* The disc peeks out from behind the cover (narrow screens, normal and fullscreen):
    the cover gives up a little width so the pair stays centred. */
-.cover.peek { overflow: visible; background: none; width: min(72%, 44vh, 300px); translate: -17.5% 0; }
+.cover.has-disc { width: min(72%, 44vh, 300px); } /* one size for cover and disc faces, or the controls below jump on a flip */
+.cover.peek { overflow: visible; background: none; translate: -17.5% 0; }
 .cover.peek #art-cover, .cover.peek .ph { z-index: 1; border-radius: 12px; }
 .cover.peek .ph { background: var(--art); }
 .cover.peek #art-cover { box-shadow: 0 10px 30px rgba(0,0,0,.5); }
