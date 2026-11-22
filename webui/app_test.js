@@ -394,6 +394,37 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.rowActions({ ...spec, mode: 'light' })[0].label, 'Dark version');
     assert.deepEqual(acts.filter((a) => a.icon === 'check').map((a) => a.label), ['B', 'Colour: Amber']);
   });
+  await ok('notification helpers', () => {
+    const song = { title: 'Darn That Dream', artist: 'Miles Davis', album: 'Birth of the Cool', path: '/m/a.flac' };
+    assert.deepEqual(A.notifyText(song), { title: 'Darn That Dream', body: 'Miles Davis · Birth of the Cool' });
+    assert.deepEqual(A.notifyText({ title: 'Solo' }), { title: 'Solo', body: '' });
+    const station = { stream: true, station: 'Classic Vinyl HD', title: 'Classic Vinyl on walmradio.com', artist: 'Daft Punk - Around the World', path: 'https://x/live' };
+    assert.deepEqual(A.notifyText(station), { title: 'Around the World', body: 'Daft Punk · Classic Vinyl HD' });
+    assert.notEqual(A.notifyKey(song), A.notifyKey({ ...song, path: '/m/b.flac' }));
+    assert.notEqual(A.notifyKey(station), A.notifyKey({ ...station, artist: 'Other - Song' }), 'a station notifies when its stream title changes');
+    assert.equal(A.notifyKey(null), '');
+    const base = { enabled: true, permission: 'granted', mode: 'hidden', hidden: true, playing: true, key: 'b', prev: 'a' };
+    assert.equal(A.shouldNotify(base), true);
+    assert.equal(A.shouldNotify({ ...base, prev: null }), false, 'the first song seen is not news');
+    assert.equal(A.shouldNotify({ ...base, key: 'a' }), false, 'the same song');
+    assert.equal(A.shouldNotify({ ...base, hidden: false }), false, 'the page is in front');
+    assert.equal(A.shouldNotify({ ...base, hidden: false, mode: 'always' }), true);
+    assert.equal(A.shouldNotify({ ...base, playing: false }), false);
+    assert.equal(A.shouldNotify({ ...base, enabled: false }), false);
+    assert.equal(A.shouldNotify({ ...base, permission: 'denied' }), false);
+    assert.equal(A.shouldNotify({ ...base, permission: 'default' }), false);
+    assert.equal(A.shouldNotify({ ...base, key: '' }), false);
+  });
+  await ok('install info', () => {
+    const o = { secure: true, standalone: false, ios: false, canPrompt: false };
+    assert.equal(A.installInfo({ ...o, standalone: true }).state, 'installed');
+    assert.equal(A.installInfo({ ...o, secure: false }).state, 'insecure');
+    assert.match(A.installInfo({ ...o, secure: false }).text, /https/);
+    assert.equal(A.installInfo({ ...o, canPrompt: true }).state, 'ready');
+    assert.equal(A.installInfo({ ...o, ios: true }).state, 'ios');
+    assert.equal(A.installInfo(o).state, 'manual');
+    assert.equal(A.installInfo({ ...o, secure: false, canPrompt: true }).state, 'insecure', 'no prompt can exist without a secure address');
+  });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
     assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);

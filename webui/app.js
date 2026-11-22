@@ -203,6 +203,30 @@ function repeatTip(mode) {
   return 'Repeat: ' + now + '. Click for ' + REPEAT_NEXT[m][0];
 }
 
+// ---- app install and notifications ----
+// notifyText: what a "new song" notification says (a station shows the song and the station)
+function notifyText(song) {
+  const rn = radioNow(song);
+  if (rn) return { title: rn.title || 'Now playing', body: [rn.artist, rn.album].filter(Boolean).join(' · ') };
+  return { title: (song && song.title) || 'Now playing', body: [song && song.artist, song && song.album].filter(Boolean).join(' · ') };
+}
+// notifyKey identifies "the song that is on": a station's key follows its stream title
+const notifyKey = (song) => (song ? (song.path || '') + '|' + ((radioNow(song) || {}).title || '') : '');
+// shouldNotify: only a change of song while playing, never for the first one seen, and only in the
+// background unless the browser's owner asked for always
+function shouldNotify(o) {
+  return !!o.enabled && o.permission === 'granted' && !!o.playing && !!o.key && o.prev !== null && o.prev !== undefined && o.key !== o.prev && (o.mode === 'always' || !!o.hidden);
+}
+// installInfo: what the Settings page tells about installing the app
+function installInfo(o) {
+  if (o.standalone) return { state: 'installed', text: 'Running as an installed app.' };
+  if (!o.secure) return { state: 'insecure', text: 'Installing and notifications need a secure address (https://, or localhost). Open Spindle through an HTTPS reverse proxy.' };
+  if (o.canPrompt) return { state: 'ready', text: 'Install Spindle as an app: its own window, icon and shortcuts.' };
+  if (o.ios) return { state: 'ios', text: 'On iPhone and iPad: tap Share, then Add to Home Screen.' };
+  return { state: 'manual', text: 'Use the browser menu: Install app, or Add to Home screen.' };
+}
+const NOTIFY_ON = 'pref:notify', NOTIFY_MODE = 'pref:notifymode';
+
 // ---- tile view ----
 const viewModeKey = (...parts) => 'view:' + parts.join(':');
 // placeholderStyle gives a tile without a picture its own colour, the same one every time.
@@ -466,7 +490,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, shuffleTip, repeatTip, deviceLabel, EQ_FREQS, EQ_PRESETS, SPEEDS, speedLabel, fmtBytes, fmtUptime, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, notifyText, notifyKey, shouldNotify, installInfo, shuffleTip, repeatTip, deviceLabel, EQ_FREQS, EQ_PRESETS, SPEEDS, speedLabel, fmtBytes, fmtUptime, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -919,7 +943,7 @@ if (typeof document !== 'undefined') (function () {
       const rn = radioNow(song);
       $('titletext').textContent = rn ? rn.title : song.title || '';
       $('artist').textContent = rn ? rn.artist : song.artist || '';
-      updateArt(song); refreshInfo(); renderTech();
+      updateArt(song); refreshInfo(); renderTech(); notifyTick(song, st);
       $('album').textContent = rn ? rn.album : [song.album, song.year].filter(Boolean).join(' · ');
       $('dur').textContent = fmtTime(st.duration);
       $('bar').setAttribute('aria-valuemax', Math.round(Number(st.duration) || 0));
@@ -1992,6 +2016,64 @@ if (typeof document !== 'undefined') (function () {
     } catch (e) { TH.setCoverAccent(null); }
   }
 
+  // ---- installing and notifying ----
+  let installEvt = null, notifyPrev = null;
+  const secure = () => typeof isSecureContext === 'boolean' ? isSecureContext : location.protocol === 'https:';
+  const standalone = () => (typeof matchMedia === 'function' && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const canNotify = () => secure() && 'Notification' in window;
+  addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if (document.body.dataset.tab === 'settings') renderSettings(); });
+  addEventListener('appinstalled', () => { installEvt = null; if (document.body.dataset.tab === 'settings') renderSettings(); });
+  if ('serviceWorker' in navigator && secure()) navigator.serviceWorker.register('sw.js').catch(() => { /* the page works without it */ });
+
+  async function sendNotification(song) {
+    const t = notifyText(song);
+    const opts = { body: t.body, icon: artUrl('cover', song.path || ''), badge: 'icon-192.png', tag: 'spindle-track', silent: true, data: {} };
+    try {
+      const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.ready : null;
+      if (reg && reg.showNotification) { await reg.showNotification(t.title, opts); return; } // phones only allow this form
+      new Notification(t.title, opts); // eslint-disable-line no-new
+    } catch (e) { /* a blocked or unsupported notification is not worth an error */ }
+  }
+  // called with every state: a change of song while playing may notify
+  function notifyTick(song, st) {
+    const key = notifyKey(song);
+    if (shouldNotify({ enabled: getPref(NOTIFY_ON, '0') === '1', permission: 'Notification' in window ? Notification.permission : 'denied', mode: getPref(NOTIFY_MODE, 'hidden'),
+      hidden: document.hidden, playing: !!st && st.state === 'playing', key, prev: notifyPrev })) sendNotification(song);
+    if (song) notifyPrev = key;
+  }
+
+  // the App card of Settings: install, and the notification switch
+  function appCard() {
+    const card = setCard('App');
+    const info = installInfo({ secure: secure(), standalone: standalone(), ios: isIos(), canPrompt: !!installEvt });
+    const installRow = setRow('Install as an app', info.state === 'ready'
+      ? h('button', { class: 'btn primary', onclick: async () => { const e = installEvt; installEvt = null; try { await e.prompt(); } catch (x) { /* dismissed */ } renderSettings(); } }, 'Install')
+      : h('span', { class: info.state === 'installed' ? 'ok' : 'dim' }, info.state === 'installed' ? 'Installed' : '–'), info.text);
+    let notifyRow;
+    if (!canNotify()) {
+      notifyRow = setRow('Notify when a song starts', h('span', { class: 'dim' }, '–'), secure() ? 'This browser has no notifications.' : 'Needs a secure address (https://).');
+    } else {
+      const perm = Notification.permission;
+      const sw = switchBtn(getPref(NOTIFY_ON, '0') === '1' && perm === 'granted', async (v) => {
+        if (!v) { setPref(NOTIFY_ON, '0'); renderSettings(); return; }
+        const r = perm === 'granted' ? 'granted' : await Notification.requestPermission();
+        if (r === 'granted') { setPref(NOTIFY_ON, '1'); toast('Notifications are on'); }
+        else { setPref(NOTIFY_ON, '0'); toast(r === 'denied' ? 'Blocked: allow notifications for this site in the browser settings' : 'Notifications were not allowed', true); }
+        renderSettings();
+      }, 'Notify when a song starts');
+      notifyRow = setRow('Notify when a song starts', sw, perm === 'denied' ? 'Blocked in the browser settings for this site.' : 'A quiet notification with the title, artist and cover.');
+    }
+    const on = canNotify() && getPref(NOTIFY_ON, '0') === '1' && Notification.permission === 'granted';
+    const extra = on ? [
+      setRow('Notify', chipRow(['hidden', 'always'], getPref(NOTIFY_MODE, 'hidden'), (v) => { setPref(NOTIFY_MODE, v); renderSettings(); }, (v) => (v === 'hidden' ? 'Only in the background' : 'Always')),
+        'Works while the page stays open; a closed or frozen page cannot notify.'),
+      setRow('Try it', h('button', { class: 'btn', onclick: () => { const song = S.state && (S.state.track || S.state.logical_track); sendNotification(song || { title: 'Spindle', artist: 'Notifications work', path: '' }); } }, 'Send a test')),
+    ] : [];
+    card.replaceChildren(h('h3', null, 'App'), installRow, notifyRow, ...extra);
+    return card;
+  }
+
   async function renderSettings() {
     const root = $('settings'), my = ++setSeq;
     const st = () => S.state || {};
@@ -2045,6 +2127,7 @@ if (typeof document !== 'undefined') (function () {
     root.replaceChildren(
       h('div', { class: 'head' }, h('h2', null, 'Settings')),
       appearanceCard(),
+      appCard(),
       setCard('Audio output', devList, h('p', { class: 'dim snote' }, 'Switching restarts the audio stream; playback may pause for a moment.')),
       setCard('Sound', setRow('Equalizer', presetSel), h('div', { class: 'eq' }, sliders.map((x) => x.el)),
         setRow('Mono', monoSw, 'Mix both channels into one'), setRow('Speed', speedChips)),

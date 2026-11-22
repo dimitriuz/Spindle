@@ -87,8 +87,9 @@ browser ──HTTP / SSE──▶ cliamp-web (the bridge, default port 8730)
 ### Themes
 Spindle, Minimal, Hi-Fi, Walkman, Winamp, Neon, OLED black, Vinyl lounge, 8-bit, 16-bit and PSX. Each has light and dark, colour options, its own button and bar shapes, and some its own icon set (thin line or pixel art). A palette button in the top corner switches them; "accent from the cover" tints the controls with a colour from the playing album. The choice is stored in the browser, so a phone and a TV can differ. See [Themes](#themes-1).
 
-### Installable
-Add it to a phone's home screen and it opens full screen with its own icon (web manifest and touch icons included).
+### Installable and notifications
+- **Install it as an app** (Settings → App → Install, or your browser's menu): its own window and icon, shortcuts to Queue, Browse and Search, and the page shell loads even when the network is slow. It needs a secure address (HTTPS), see [Installing as an app](#installing-as-an-app-and-notifications).
+- **Optional notifications** when a new song starts: a quiet one with the title, artist and cover, only while the page is in the background (or always, your choice). Off by default.
 
 ## Requirements
 
@@ -209,6 +210,21 @@ spindle.example.lan {
 }
 ```
 
+## Installing as an app and notifications
+
+Browsers only offer to install a web app, and only allow notifications, on a **secure address**: `https://…`, or `http://localhost`. A plain `http://192.168.1.48:8730` address works for everything else but not for these two. Put Spindle behind an HTTPS reverse proxy (see above), then open it through that address. Settings → App tells you what is missing.
+
+**Install**
+- Chrome, Edge and other Chromium browsers (desktop and Android): Settings → App → **Install**, or the install icon in the address bar.
+- iPhone and iPad (Safari): Share → **Add to Home Screen**.
+- Once installed it opens in its own window and has shortcuts (long-press the icon): Queue, Browse and Search.
+
+**Notifications**
+- Settings → App → switch on **Notify when a song starts**, and allow the permission when the browser asks. Choose *Only in the background* (default) or *Always*. **Send a test** checks that it works.
+- For a radio station the notification follows the stream's song title.
+- The page has to be open: Spindle sends the notification itself, from the page, as the song changes. A page the browser has closed or frozen (a phone with the screen off for a while) cannot notify, because pushing to a closed page would need an internet push service, which a LAN-only player does not use.
+- The notification is silent and replaces the previous one; tapping it brings the app forward.
+
 ## Using it
 
 | Where | What |
@@ -218,7 +234,7 @@ spindle.example.lan {
 | **Browse** | providers, collections as tiles or list, files, radio |
 | **Favorites** | everything you hearted, filtered by kind |
 | **Search** | search a provider; for Radio it searches the whole public directory |
-| **Settings** | output device, equalizer, themes, library and about |
+| **Settings** | themes, install and notifications, output device, equalizer, library and about |
 | **Palette button** (top corner) | theme, colour, light or dark |
 
 Tips: tap the cover to flip between cover and disc; long lists keep loading as you scroll; the filter box and the drop-downs above a list work on everything loaded so far (artists, albums and playlists load completely in the background).
@@ -292,7 +308,7 @@ make build     # dist/cliamp-web (embeds webui/, no JS toolchain)
 make test      # go vet + go test + node webui/app_test.js
 ```
 
-- `cmd/cliamp-web`: the program; `internal/`: IPC, snapshot cache, HTTP server, art, files, favorites, enqueue worker; `webui/`: the page (`index.html`, `app.css`, `app.js`, `themes.js`, `icons.js`, icons and manifest); `web.lua`: the supervisor plugin.
+- `cmd/cliamp-web`: the program; `internal/`: IPC, snapshot cache, HTTP server, art, files, favorites, enqueue worker; `webui/`: the page (`index.html`, `app.css`, `app.js`, `themes.js`, `icons.js`, the service worker `sw.js`, icons and manifest); `web.lua`: the supervisor plugin.
 - The pure half of the page (list sorting, menus, themes, formatting) is tested in plain Node: `node webui/app_test.js`.
 - After changing `webui/`, rebuild the binary (the files are embedded) and hard-reload the page.
 - Screenshots in this README were taken with headless Chrome against a real player.

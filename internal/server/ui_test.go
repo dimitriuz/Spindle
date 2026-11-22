@@ -94,7 +94,7 @@ func TestAppIconsAndManifestAreEmbeddedAndServed(t *testing.T) {
 	want := map[string]string{
 		"/icon.svg": "image/svg+xml", "/icon-192.png": "image/png", "/icon-512.png": "image/png",
 		"/icon-maskable-512.png": "image/png", "/apple-touch-icon.png": "image/png", "/favicon-32.png": "image/png",
-		"/manifest.json": "application/json",
+		"/manifest.json": "application/json", "/sw.js": "text/javascript",
 	}
 	for path, ct := range want {
 		rec := uiGet(h, path)
@@ -103,9 +103,22 @@ func TestAppIconsAndManifestAreEmbeddedAndServed(t *testing.T) {
 		}
 	}
 	page := uiGet(h, "/").Body.String()
-	for _, link := range []string{`rel="icon"`, `rel="apple-touch-icon"`, `rel="manifest"`} {
+	for _, link := range []string{`rel="icon"`, `rel="apple-touch-icon"`, `rel="manifest"`, `apple-mobile-web-app-capable`} {
 		if !strings.Contains(page, link) {
 			t.Errorf("page lacks %s", link)
 		}
+	}
+}
+
+func TestServiceWorkerNeverCachesTheAPIAndServesFromTheRoot(t *testing.T) {
+	cfg := guardedConfig(t)
+	cfg.UI = webui.FS()
+	rec := uiGet(New(cfg), "/sw.js")
+	body := rec.Body.String()
+	if rec.Code != 200 || !strings.Contains(body, "/api/") || !strings.Contains(body, "notificationclick") {
+		t.Fatalf("%d %.80s", rec.Code, body)
+	}
+	if !strings.Contains(body, "startsWith('/api/')") {
+		t.Fatal("the worker must leave the player's /api/ requests alone")
 	}
 }
