@@ -310,6 +310,16 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.fmtUptime(200000), '2 d 7 h');
     assert.deepEqual(A.parseHash('#settings'), { tab: 'settings', rest: '' });
   });
+  await ok('equalizer menu actions', () => {
+    const acts = A.rowActions({ kind: 'eq', current: 'Rock' });
+    assert.equal(acts.length, 16, 'the 16 presets, no Custom when a preset is active');
+    assert.deepEqual(acts.filter((a) => a.icon === 'check').map((a) => a.label), ['Rock']);
+    assert.equal(acts[0].id, 'eq:Flat');
+    const custom = A.rowActions({ kind: 'eq', current: 'Custom' });
+    assert.equal(custom.length, 17);
+    assert.deepEqual(custom.filter((a) => a.icon === 'check').map((a) => a.label), ['Custom']);
+    assert.ok(custom.find((a) => a.label === 'Custom').disabled, 'Custom is a state, not a choice');
+  });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
     assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);
