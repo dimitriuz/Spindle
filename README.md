@@ -52,6 +52,28 @@ frozen under `archive/webui-vue` and no longer served; new features land in
 the vanilla page only.
 
 
+## Artwork
+
+Now Playing shows the album cover, a small artist photo next to the artist
+name, and the album's disc. Tap the cover to flip it to the disc; the disc
+spins at 33 1/3 rpm while playing, brakes when you pause and coasts to a stop
+when playback stops.
+
+- **Navidrome** (and other Subsonic servers): cover and artist photo come from
+  `getCoverArt`; the disc is the `disc.png` in the album folder, fetched with
+  Navidrome's `dc-<albumId>:1` id (not part of the documented Subsonic API;
+  works on Navidrome 0.64.2, and where it is missing the page simply has no disc).
+- **Local files**: the cover is the picture embedded in the file, else
+  `cover|folder|front|album` + `.jpg|.jpeg|.png|.webp` in the album folder;
+  the disc is `disc.png` or `cdart.png`; the artist photo is `artist.jpg|.png`
+  in the album folder or its parent. Only files of tracks cliamp has reported
+  are ever read.
+- **Radio and other providers** have no artwork: the placeholder stays.
+
+Pictures are fetched once and cached under `<data-dir>/art/` (200 MB cap, least
+recently used removed first). The bridge only ever contacts the Navidrome host
+named in the track's own stream URL; nothing goes to outside services.
+
 ## Install
 
 1. `cliamp plugins install <user>/cliamp-plugin-web`

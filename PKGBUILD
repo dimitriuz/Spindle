@@ -8,6 +8,10 @@ license=(MIT)
 makedepends=(go)
 source=("git+https://github.com/<user>/cliamp-plugin-web#tag=v$pkgver")
 sha256sums=("SKIP")
+prepare() {
+  cd cliamp-plugin-web
+  go mod download
+}
 build() {
   cd cliamp-plugin-web
   make build

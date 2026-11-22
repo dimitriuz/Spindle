@@ -16,10 +16,14 @@
     <a class="btn primary" href="#browse">Browse</a>
   </div>
   <div id="player" hidden>
-    <div class="cover"><div class="ph" data-icon="note"></div></div>
+    <div id="cover" class="cover">
+      <div class="ph" data-icon="note"></div>
+      <img id="art-cover" class="art" alt="" hidden>
+      <img id="art-disc" class="art disc" alt="" hidden>
+    </div>
     <div class="meta">
       <h1 id="title"></h1>
-      <p id="artist"></p>
+      <p class="artist-line"><img id="artist-img" class="avatar" alt="" hidden><span id="artist"></span></p>
       <p id="album" class="dim"></p>
     </div>
     <div class="seek">

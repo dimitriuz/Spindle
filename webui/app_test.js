@@ -114,6 +114,51 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.curVolume({ volume: -3.5 }), -3.5);
   });
 
+  await ok('artUrl encodes the track path', () => {
+    assert.equal(A.artUrl('disc', '/m/a b?x&y.flac'), '/api/art/disc?path=%2Fm%2Fa%20b%3Fx%26y.flac');
+    assert.equal(A.artUrl('cover', 'https://h/rest/stream?id=1'), '/api/art/cover?path=https%3A%2F%2Fh%2Frest%2Fstream%3Fid%3D1');
+  });
+
+  await ok('spinStep: smooth start, settles at speed, monotonic', () => {
+    let m = { w: 0, a: 0 }, prev = 0;
+    m = A.spinStep(m, 200, 4, 0.01);
+    assert.ok(m.w > 0 && m.w < 1, 'no jolt: ' + m.w);
+    prev = m.w;
+    for (let i = 0; i < 300; i++) { m = A.spinStep(m, 200, 4, 1 / 60); assert.ok(m.w >= prev - 1e-9, 'never slows while spinning up'); prev = m.w; }
+    assert.ok(m.w > 199.9 && m.w < 200.1, 'settles on 200 deg/s: ' + m.w);
+    assert.ok(Math.abs(m.a) < 0.05, 'and the acceleration dies away');
+  });
+
+  await ok('spinStep is frame-rate independent', () => {
+    let a = { w: 0, a: 0 }, b = { w: 0, a: 0 };
+    for (let i = 0; i < 60; i++) a = A.spinStep(a, 200, 4, 1 / 60);
+    b = A.spinStep(b, 200, 4, 1);
+    assert.ok(Math.abs(a.w - b.w) < 1e-6, a.w + ' vs ' + b.w);
+    assert.ok(Math.abs(a.a - b.a) < 1e-6);
+  });
+
+  await ok('spinStep: stop coasts for seconds, pause brakes faster, never reverses', () => {
+    const run = (k, t) => { let m = { w: 200, a: 0 }; for (let i = 0; i < Math.round(t * 60); i++) { m = A.spinStep(m, 0, k, 1 / 60); assert.ok(m.w >= 0); } return m.w; };
+    assert.ok(run(2.2, 1) > 60, 'still turning after 1 s of coasting: ' + run(2.2, 1));
+    assert.ok(run(2.2, 5) < 1, 'and at rest within 5 s');
+    assert.ok(run(5, 1) < run(2.2, 1), 'pause brake is quicker than a coast');
+  });
+
+  await ok('spinStep: reversing mid spin-up keeps acceleration continuous', () => {
+    let m = { w: 0, a: 0 };
+    for (let i = 0; i < 20; i++) m = A.spinStep(m, 200, 4, 1 / 60);
+    const before = m.a, after = A.spinStep(m, 0, 5, 1e-9).a;
+    assert.ok(Math.abs(before - after) < 1e-3, 'no torque jump at the switch: ' + before + ' -> ' + after);
+  });
+
+  await ok('spinPlan maps player state to target speed and settle rate', () => {
+    assert.deepEqual(A.spinPlan('playing', false), { target: 200, k: 4 });
+    assert.deepEqual(A.spinPlan('paused', false), { target: 0, k: 5 });
+    assert.deepEqual(A.spinPlan('stopped', false), { target: 0, k: 2.2 });
+    assert.deepEqual(A.spinPlan(undefined, false), { target: 0, k: 2.2 });
+    assert.equal(A.spinPlan('playing', true).target, 0, 'reduced motion: never spin');
+  });
+
   await ok('moveTarget stops at the ends', () => {
     assert.deepEqual(A.moveTarget(0, 3, -1), null);
     assert.deepEqual(A.moveTarget(1, 3, 1), { from: 1, to: 2 });
