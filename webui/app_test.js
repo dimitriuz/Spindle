@@ -386,6 +386,14 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     for (const pack of ['line', 'pixel']) for (const n of need) assert.ok(P[pack].paths[n] && /^[MmLlHhVvCcSsQqTtAaZz0-9 .,\-]+$/.test(P[pack].paths[n]), pack + ' lacks a valid ' + n);
     assert.ok(P.line.stroke && P.pixel.crisp);
   });
+  await ok('theme menu actions', () => {
+    const spec = { kind: 'theme', mode: 'dark', themes: [{ id: 'a', name: 'A', on: false }, { id: 'b', name: 'B', on: true }], opts: [{ id: 'x', name: 'Amber', on: true }, { id: 'y', name: 'Ice', on: false }] };
+    const acts = A.rowActions(spec);
+    assert.deepEqual(acts.map((a) => a.id), ['mode', 't:a', 't:b', 'o:x', 'o:y']);
+    assert.equal(acts[0].label, 'Light version', 'in dark mode the shortcut offers the light version');
+    assert.equal(A.rowActions({ ...spec, mode: 'light' })[0].label, 'Dark version');
+    assert.deepEqual(acts.filter((a) => a.icon === 'check').map((a) => a.label), ['B', 'Colour: Amber']);
+  });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
     assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);

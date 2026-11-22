@@ -507,3 +507,10 @@ html[data-skin] .vtoggle .ic[aria-pressed=true] { background: var(--accent); col
 html[data-skin] .fs-close { background: none; border: 0; box-shadow: none; }
 html[data-skin^=pixel] #now.fs .meta h1 { font-size: clamp(16px, 2.2vw, 46px); line-height: 1.45; }
 @media (min-width: 900px) { html[data-skin=psx] #tabs a, html[data-skin=hifi] #tabs a { padding: 0 10px; font-size: 13px; } html[data-skin^=pixel] #tabs a { padding: 0 10px; } }
+
+/* Theme button in the top corner */
+.themebtn { position: fixed; top: calc(8px + env(safe-area-inset-top)); right: 8px; z-index: 6; width: 38px; height: 38px; min-width: 0; min-height: 0; color: var(--dim);
+  background: color-mix(in srgb, var(--panel) 80%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.themebtn svg { width: 22px; height: 22px; }
+body.fs-open .themebtn { display: none; }
+@media (min-width: 900px) { .themebtn { position: static; grid-area: 1 / 2; justify-self: end; align-self: center; margin-right: 16px; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; } }

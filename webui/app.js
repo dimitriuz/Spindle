@@ -286,6 +286,10 @@ function rowActions(spec) {
     case 'album': case 'playlist': case 'artist': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add'), ...fav];
     case 'radio': return [A('play', 'Play', 'play'), ...fav];
     case 'file': case 'folder': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add')];
+    case 'theme': return [
+      A('mode', spec.mode === 'dark' ? 'Light version' : 'Dark version', 'blank'),
+      ...spec.themes.map((t) => A('t:' + t.id, t.name, t.on ? 'check' : 'blank')),
+      ...spec.opts.map((o) => A('o:' + o.id, 'Colour: ' + o.name, o.on ? 'check' : 'blank'))];
     case 'eq': return ['Custom', ...EQ_PRESETS].filter((n) => n !== 'Custom' || spec.current === 'Custom' || !EQ_PRESETS.includes(spec.current))
       .map((n) => A('eq:' + n, n, n === spec.current ? 'check' : 'blank', { disabled: n === 'Custom' }));
     case 'queue': {
@@ -480,6 +484,7 @@ if (typeof document !== 'undefined') (function () {
     more: 'M6 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm12 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
     note: 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z',
     lyrics: 'M14 17H4v2h10v-2zm6-8H4v2h16V9zM4 15h16v-2H4v2zM4 5v2h16V5H4z',
+    palette: 'M12 3a9 9 0 0 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4c2.8 0 5-2.2 5-5 0-4.4-4-8-9.4-8zM6.5 12a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z',
     check: 'M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z',
     blank: '',
     gear: 'M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z',
@@ -1003,6 +1008,7 @@ if (typeof document !== 'undefined') (function () {
         run: Object.fromEntries(EQ_PRESETS.map((n) => ['eq:' + n, () => cmd('eq', { name: n })])) });
     };
     $('art-cover').addEventListener('load', syncCoverAccent);
+    $('b-theme').onclick = (e) => openThemeMenu(e.currentTarget);
     $('b-eq').onclick = openEq;
     $('b-eq-fs').onclick = openEq;
     $('b-shuffle').onclick = () => S.state && cmd('shuffle', { name: S.state.shuffle ? 'off' : 'on' });
@@ -1923,6 +1929,26 @@ if (typeof document !== 'undefined') (function () {
   const chipRow = (items, current, pick, fmt) => h('div', { class: 'chips' }, items.map((v) =>
     h('button', { class: 'chip', 'aria-pressed': String(String(v) === String(current)), onclick: () => pick(v) }, fmt ? fmt(v) : String(v))));
 
+  // apply a change of theme, colour or mode; a theme with another icon set needs a fresh page
+  function themeChoice(change) {
+    const before = TH.iconPack();
+    change(); TH.apply(); syncCoverAccent();
+    if (TH.iconPack() !== before) { location.reload(); return; }
+    if (document.body.dataset.tab === 'settings') renderSettings();
+  }
+  // the palette button in the top corner: pick a theme, its colour, or flip light and dark
+  function openThemeMenu(trigger) {
+    const cur = TH.byId(TH.get(TH.KEYS.theme, 'cliamp'));
+    const sysDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+    const mode = TH.resolveMode(cur, TH.get(TH.KEYS.mode, ''), sysDark);
+    const optId = TH.get(TH.KEYS.opt(cur.id), cur.options[0].id);
+    const spec = { kind: 'theme', mode, themes: TH.THEMES.map((t) => ({ id: t.id, name: t.name, on: t.id === cur.id })), opts: cur.options.map((o) => ({ id: o.id, name: o.name, on: o.id === optId })) };
+    const run = { mode: () => themeChoice(() => TH.set(TH.KEYS.mode, mode === 'dark' ? 'light' : 'dark')) };
+    for (const t of TH.THEMES) run['t:' + t.id] = () => themeChoice(() => TH.set(TH.KEYS.theme, t.id));
+    for (const o of cur.options) run['o:' + o.id] = () => themeChoice(() => TH.set(TH.KEYS.opt(cur.id), o.id));
+    openMenu({ trigger, title: 'Theme', subtitle: cur.name, spec, run });
+  }
+
   // Appearance: theme cards, colour options, light/dark mode, accent from the cover. It redraws itself.
   function appearanceCard() {
     const card = setCard('Appearance');
@@ -1931,12 +1957,7 @@ if (typeof document !== 'undefined') (function () {
       const sysDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
       const modePref = TH.get(TH.KEYS.mode, '');
       const optOf = (t) => TH.get(TH.KEYS.opt(t.id), t.options[0].id);
-      const choose = (fn) => {
-        const before = TH.iconPack();
-        fn(); TH.apply(); syncCoverAccent();
-        if (TH.iconPack() !== before) { location.reload(); return; } // icons are drawn once: the other set needs a fresh page
-        paint();
-      };
+      const choose = (fn) => themeChoice(fn); // Settings redraws itself when the choice is made
       const cards = h('div', { class: 'themes' }, TH.THEMES.map((t) => {
         const v = TH.themeVars(t, optOf(t), TH.resolveMode(t, modePref, sysDark));
         return h('button', { class: 'theme', 'aria-pressed': String(t.id === cur.id), title: t.blurb, onclick: () => choose(() => TH.set(TH.KEYS.theme, t.id)) },
