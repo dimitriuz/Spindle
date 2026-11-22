@@ -27,6 +27,7 @@ type Resolver struct {
 	local   *Local
 	restore func(string) string
 	known   func(string) bool
+	folders CoverFinder
 	ndCfg   *NavidromeConfig // the user's server login from cliamp's config, for covers by id
 }
 

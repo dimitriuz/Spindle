@@ -281,3 +281,59 @@ func TestNaturalLess(t *testing.T) {
 		}
 	}
 }
+
+func TestCoverFilePriorityAndFallback(t *testing.T) {
+	b, root := newBrowser(t, "A/folder.png", "A/cover.jpg", "A/x.flac", "B/sub 10/cover.jpg", "B/sub 2/cover.png", "C/x.flac", "D/Cover.JPG")
+	rel := func(abs string, err error) string {
+		if err != nil {
+			return "ERR:" + err.Error()
+		}
+		r, _ := filepath.Rel(mustReal(t, root), abs)
+		return filepath.ToSlash(r)
+	}
+	for in, want := range map[string]string{
+		"A": "A/cover.jpg",          // cover beats folder
+		"B": "B/sub 2/cover.png",    // none here: the first sub-folder in natural order
+		"D": "D/Cover.JPG",          // case-insensitive
+		"C": "ERR:files: not found", // nothing anywhere
+	} {
+		if got := rel(b.CoverFile(in)); got != want {
+			t.Fatalf("%s: got %q want %q", in, got, want)
+		}
+	}
+	if _, err := b.CoverFile("A/x.flac"); err == nil {
+		t.Fatal("a file has no folder cover")
+	}
+}
+
+func TestCoverFileRefusesEscapesAndSymlinksOut(t *testing.T) {
+	b, root := newBrowser(t, "in/x.flac")
+	outside := t.TempDir()
+	touch(t, outside, "pic.jpg", "dir/cover.jpg")
+	if err := os.Symlink(filepath.Join(outside, "pic.jpg"), filepath.Join(root, "in", "cover.jpg")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	if _, err := b.CoverFile("in"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a cover that is a link out of the root must not be used: %v", err)
+	}
+	_ = os.Symlink(filepath.Join(outside, "dir"), filepath.Join(root, "in", "linked"))
+	if _, err := b.CoverFile("in"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("nor one reached through a folder link out: %v", err)
+	}
+	for _, rel := range []string{"..", "../x", "/etc", "in/../.."} {
+		if _, err := b.CoverFile(rel); !errors.Is(err, ErrOutside) {
+			t.Fatalf("%q: %v", rel, err)
+		}
+	}
+}
+
+func TestCoverFileSkipsHugeImages(t *testing.T) {
+	b, root := newBrowser(t, "A/x.flac")
+	big := filepath.Join(root, "A", "cover.jpg")
+	f, _ := os.Create(big)
+	_ = f.Truncate(11 << 20)
+	f.Close()
+	if _, err := b.CoverFile("A"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an 11 MB cover is not a thumbnail candidate: %v", err)
+	}
+}

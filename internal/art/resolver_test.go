@@ -2,6 +2,7 @@ package art
 
 import (
 	"bytes"
+	"cliamp-web/internal/files"
 	"context"
 	"errors"
 	"net/http"
@@ -90,3 +91,63 @@ func TestStreamURLOfAnUnknownHostIsRefusedWithoutAnyRequest(t *testing.T) {
 }
 
 func http_default() *http.Client { return http.DefaultClient }
+
+type fakeCovers struct {
+	abs   string
+	err   error
+	calls int
+}
+
+func (f *fakeCovers) CoverFile(string) (string, error) { f.calls++; return f.abs, f.err }
+
+func TestFolderArtMakesACachedThumbnailAndFollowsTheFile(t *testing.T) {
+	dir := t.TempDir()
+	cover := filepath.Join(dir, "cover.png")
+	write(t, cover, gradientPNG(t, 900, 900))
+	fc := &fakeCovers{abs: cover}
+	r := newResolver(t, nil, nil)
+	r.SetFolders(fc)
+	img, err := r.FolderArt(context.Background(), "A")
+	if err != nil || img.ContentType != "image/jpeg" {
+		t.Fatalf("%v %+v", err, img)
+	}
+	if w, h := jpegSize(t, img.Data); w != 300 || h != 300 {
+		t.Fatalf("%dx%d", w, h)
+	}
+	// served from the cache while the file is unchanged, re-made when it changes
+	k1 := img.Key
+	img2, _ := r.FolderArt(context.Background(), "A")
+	if img2.Key != k1 {
+		t.Fatal("same file, same picture")
+	}
+	write(t, cover, gradientPNG(t, 450, 450))
+	img3, err := r.FolderArt(context.Background(), "A")
+	if err != nil || img3.Key == k1 {
+		t.Fatalf("a replaced cover must be re-thumbnailed: %v", err)
+	}
+	if w, _ := jpegSize(t, img3.Data); w != 300 {
+		t.Fatalf("width %d", w)
+	}
+}
+
+func TestFolderArtErrors(t *testing.T) {
+	r := newResolver(t, nil, nil)
+	if _, err := r.FolderArt(context.Background(), "A"); !errors.Is(err, ErrNoArt) {
+		t.Fatalf("not configured: %v", err)
+	}
+	r.SetFolders(&fakeCovers{err: files.ErrOutside})
+	if _, err := r.FolderArt(context.Background(), "../x"); !errors.Is(err, files.ErrOutside) {
+		t.Fatalf("an escape stays an escape: %v", err)
+	}
+	r.SetFolders(&fakeCovers{err: files.ErrNotFound})
+	if _, err := r.FolderArt(context.Background(), "A"); !errors.Is(err, ErrNoArt) {
+		t.Fatalf("no cover: %v", err)
+	}
+	dir := t.TempDir()
+	bad := filepath.Join(dir, "cover.jpg")
+	write(t, bad, []byte("not an image"))
+	r.SetFolders(&fakeCovers{abs: bad})
+	if _, err := r.FolderArt(context.Background(), "A"); !errors.Is(err, ErrNoArt) {
+		t.Fatalf("an undecodable cover is no art: %v", err)
+	}
+}

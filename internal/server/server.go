@@ -29,6 +29,8 @@ type Config struct {
 	Files FilesSource
 	// ItemArt finds covers of Navidrome albums/artists/playlists by id; nil means none.
 	ItemArt ItemArtSource
+	// FolderArt makes thumbnails of music folder covers for /api/files/art; nil means none.
+	FolderArt FolderArtSource
 	// UI is the embedded web interface (webui: index.html, app.css, app.js),
 	// served at the root; nil disables it.
 	UI     fs.FS
@@ -93,6 +95,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("POST /api/enqueue", s.protect(http.HandlerFunc(s.enqueueStart)))
 	mux.Handle("POST /api/enqueue/cancel", s.protect(http.HandlerFunc(s.enqueueCancel)))
 	mux.Handle("GET /api/files/root", s.protect(http.HandlerFunc(s.filesRoot)))
+	mux.Handle("GET /api/files/art", s.protect(http.HandlerFunc(s.folderArt)))
 	mux.Handle("GET /api/files", s.protect(http.HandlerFunc(s.filesList)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))

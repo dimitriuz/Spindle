@@ -248,6 +248,75 @@ func (b *Browser) Walk(ctx context.Context, rel string) ([]string, error) {
 	return out, nil
 }
 
+var coverNames = []string{"cover", "folder", "front", "album"}
+var coverExts = []string{".jpg", ".jpeg", ".png"}
+
+// findCover looks for cover|folder|front|album .jpg|.jpeg|.png in one folder
+// (case-insensitive), ignoring pictures that leave the root or are too big.
+func (b *Browser) findCover(dir string) (string, bool) {
+	des, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	have := map[string]string{}
+	for _, de := range des {
+		have[strings.ToLower(de.Name())] = de.Name()
+	}
+	for _, n := range coverNames {
+		for _, e := range coverExts {
+			name, ok := have[n+e]
+			if !ok {
+				continue
+			}
+			real, err := filepath.EvalSymlinks(filepath.Join(dir, name))
+			if err != nil || !b.inside(real) {
+				continue
+			}
+			if fi, err := os.Stat(real); err != nil || !fi.Mode().IsRegular() || fi.Size() > 10<<20 {
+				continue
+			}
+			return real, true
+		}
+	}
+	return "", false
+}
+
+// CoverFile finds a folder's cover picture: in the folder itself, else in its
+// first sub-folder (so an artist folder shows its first album). ErrNotFound if none.
+func (b *Browser) CoverFile(rel string) (string, error) {
+	_, real, err := b.resolve(rel)
+	if err != nil {
+		return "", err
+	}
+	if fi, err := os.Stat(real); err != nil || !fi.IsDir() {
+		return "", ErrNotFound
+	}
+	if p, ok := b.findCover(real); ok {
+		return p, nil
+	}
+	des, err := os.ReadDir(real)
+	if err != nil {
+		return "", ErrNotFound
+	}
+	sort.Slice(des, func(i, j int) bool { return NaturalLess(des[i].Name(), des[j].Name()) })
+	for _, de := range des {
+		if strings.HasPrefix(de.Name(), ".") {
+			continue
+		}
+		if isDir, ok := b.kind(real, de); ok && isDir {
+			sub, err := filepath.EvalSymlinks(filepath.Join(real, de.Name()))
+			if err != nil || !b.inside(sub) {
+				continue
+			}
+			if p, ok := b.findCover(sub); ok {
+				return p, nil
+			}
+			return "", ErrNotFound // only the first sub-folder is looked at
+		}
+	}
+	return "", ErrNotFound
+}
+
 // RootFromConfig is cliamp's initial_directory (its file browser's start), with
 // ~ expanded, or ~/Music when the config does not say.
 func RootFromConfig(configDir, home string) string {
