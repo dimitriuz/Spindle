@@ -74,6 +74,24 @@ Pictures are fetched once and cached under `<data-dir>/art/` (200 MB cap, least
 recently used removed first). The bridge only ever contacts the Navidrome host
 named in the track's own stream URL; nothing goes to outside services.
 
+## Fullscreen
+
+The fullscreen button on Now Playing opens a full-window player: blurred cover
+backdrop, artist photo and name, `04 · Title`, album and year, progress, a tech
+line (`FLAC • 1161 kbps • 24 bit • 44.1 kHz`) and the next track. Close it with
+the button, Escape or a swipe down.
+
+- **Wide windows** (at least 700 px, landscape) show the cover and the spinning
+  disc side by side. **Narrow ones** show the cover with the disc peeking out
+  from behind it, sliding out when playback starts and back in when it stops;
+  tap to flip to the disc.
+- **Tech info** comes from Navidrome (`getSong`), from the FLAC header for local
+  FLAC files, and from the tag type plus average bitrate for other local formats.
+  Anything unknown is simply left out.
+- **Next track** is the first play-next entry, else the following queue row
+  (wrapping on repeat-all). It is hidden with shuffle on, because cliamp's real
+  order is not visible, and with repeat-one.
+
 ## Install
 
 1. `cliamp plugins install <user>/cliamp-plugin-web`

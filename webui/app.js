@@ -45,7 +45,10 @@ function curIndex(st) {
 function curVolume(st) { return st && st.volume != null ? Number(st.volume) : 0; }
 
 // ---- art ----
-const artUrl = (kind, path) => '/api/art/' + kind + '?path=' + encodeURIComponent(path);
+// v changes whenever what the bridge answers for a URL changes (art is cached for
+// a day): v=2 retired the album covers that were once served as discs.
+const ART_V = 2;
+const artUrl = (kind, path) => '/api/art/' + kind + '?v=' + ART_V + '&path=' + encodeURIComponent(path);
 
 // The disc is a platter driven by a motor, so its speed is not set, it is
 // approached. spinStep moves {w: deg/s, a: deg/s^2} toward `target` as a
@@ -203,6 +206,8 @@ if (typeof document !== 'undefined') (function () {
     queue: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
     browse: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z',
     search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+    expand: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
+    collapse: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
     back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
   };
   function svg(name) {
@@ -264,6 +269,7 @@ if (typeof document !== 'undefined') (function () {
       if (curIndex(prev.state) !== curIndex(S.state)) markCurrent();
     } else if (ev.type === 'queue') {
       renderQueue();
+      renderNext();
     } else if (ev.type === 'conn') {
       $('banner').hidden = ev.up;
     }
@@ -321,7 +327,10 @@ if (typeof document !== 'undefined') (function () {
   // The platter keeps turning (or coasting) whichever side is showing, like
   // the real thing; `art` holds its state between animation frames.
   const art = { path: null, seq: 0, coverOk: false, disc: false, showDisc: false, flipping: false,
-    angle: 0, w: 0, a: 0, target: 0, k: 2.2, last: 0, raf: 0 };
+    angle: 0, w: 0, a: 0, target: 0, k: 2.2, last: 0, raf: 0, info: null, pref: false };
+  try { art.pref = sessionStorage.getItem('cliamp-disc') === '1'; } catch (e) { /* storage may be off */ }
+  const fsOn = () => $('now').classList.contains('fs');
+  const fsBoth = () => fsOn() && $('now').dataset.art === 'both';
   const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function loadImg(url, seq, ok, no) {
     const im = new Image();
@@ -329,32 +338,63 @@ if (typeof document !== 'undefined') (function () {
     im.onerror = () => { if (seq === art.seq) no(); };
     im.src = url;
   }
+  // Which faces show: normally one (cover, or disc after a tap). Fullscreen on a
+  // wide window shows both; on a narrow one the cover with the disc peeking
+  // out from behind it, or the disc alone after a tap.
   function paintArt() {
-    const box = $('cover');
-    box.classList.toggle('has-disc', art.disc);
-    box.classList.toggle('show-disc', art.showDisc && art.disc);
-    box.tabIndex = art.disc ? 0 : -1;
-    if (art.disc) { box.setAttribute('role', 'button'); box.setAttribute('aria-label', art.showDisc ? 'Disc, tap for cover' : 'Cover, tap for disc'); }
+    const box = $('cover'), both = fsBoth(), peekable = fsOn() && !both;
+    const discOnly = art.showDisc && art.disc && !both;
+    const coverShown = art.coverOk && !discOnly;
+    const discShown = art.disc && (discOnly || both || (peekable && !discOnly));
+    const flippable = art.disc && !both;
+    box.classList.toggle('has-disc', flippable);
+    box.classList.toggle('show-disc', discOnly);
+    box.classList.toggle('peek', peekable && art.disc && !discOnly);
+    box.tabIndex = flippable ? 0 : -1;
+    if (flippable) { box.setAttribute('role', 'button'); box.setAttribute('aria-label', discOnly ? 'Disc, tap for cover' : 'Cover, tap for disc'); }
     else { box.removeAttribute('role'); box.setAttribute('aria-label', 'Cover'); }
-    const disc = art.showDisc && art.disc;
-    $('art-disc').hidden = !disc;
-    $('art-cover').hidden = disc || !art.coverOk;
-    box.querySelector('.ph').hidden = disc || art.coverOk;
+    $('art-disc').hidden = !discShown;
+    $('art-cover').hidden = !coverShown;
+    box.querySelector('.ph').hidden = discOnly || coverShown;
+  }
+  function renderTech() {
+    const t = techLine(art.info);
+    $('tech').textContent = t;
+    $('tech').hidden = !t;
+  }
+  function renderNext() {
+    const n = nextTrack(S.state, S.queue);
+    $('next').hidden = !(n && n.title);
+    if (n && n.title) $('next').textContent = 'Next: ' + n.title + (n.artist ? ' — ' + n.artist : '');
   }
   function updateArt(song) {
     const p = (song && song.path) || '';
     if (p === art.path) return;
     art.path = p;
     const seq = ++art.seq;
-    if (!p) { art.coverOk = art.disc = art.showDisc = false; $('artist-img').hidden = true; paintArt(); setSpin(null); return; }
+    if (!p) {
+      art.coverOk = art.disc = art.showDisc = false; art.info = null;
+      $('artist-img').hidden = true; $('fs-bg').style.backgroundImage = '';
+      paintArt(); renderTech(); setSpin(null);
+      return;
+    }
     // the old pictures stay up until the new ones arrive (or turn out not to exist)
-    loadImg(artUrl('cover', p), seq, (u) => { $('art-cover').src = u; art.coverOk = true; paintArt(); }, () => { art.coverOk = false; paintArt(); });
+    loadImg(artUrl('cover', p), seq,
+      (u) => { $('art-cover').src = u; art.coverOk = true; $('fs-bg').style.backgroundImage = 'url("' + u + '")'; paintArt(); },
+      () => { art.coverOk = false; $('fs-bg').style.backgroundImage = ''; paintArt(); });
     loadImg(artUrl('artist', p), seq, (u) => { $('artist-img').src = u; $('artist-img').hidden = false; }, () => { $('artist-img').hidden = true; });
-    loadImg(artUrl('disc', p), seq, (u) => { $('art-disc').src = u; art.disc = true; paintArt(); setSpin(S.state && S.state.state); },
+    loadImg(artUrl('disc', p), seq,
+      (u) => { $('art-disc').src = u; if (!art.disc) art.showDisc = art.pref; art.disc = true; paintArt(); setSpin(S.state && S.state.state); },
       () => { art.disc = false; art.showDisc = false; art.w = art.a = 0; paintArt(); });
+    const dur = Number(S.state && S.state.duration) || 0;
+    api.get('/api/trackinfo?path=' + encodeURIComponent(p) + (dur ? '&duration=' + dur : ''))
+      .then((info) => { if (seq === art.seq) { art.info = info; renderTech(); } })
+      .catch(() => { if (seq === art.seq) { art.info = null; renderTech(); } });
   }
   async function flipDisc() {
-    if (!art.disc || art.flipping) return;
+    if (!art.disc || art.flipping || fsBoth()) return;
+    try { sessionStorage.setItem('cliamp-disc', art.showDisc ? '0' : '1'); } catch (e) { /* storage may be off */ }
+    art.pref = !art.showDisc;
     if (reducedMotion()) { art.showDisc = !art.showDisc; paintArt(); return; }
     art.flipping = true;
     const box = $('cover'), persp = 'perspective(2000px) ';
@@ -369,6 +409,7 @@ if (typeof document !== 'undefined') (function () {
     art.flipping = false;
   }
   function setSpin(state) {
+    $('cover').classList.toggle('out', state === 'playing'); // the peeking disc slides out while playing
     const plan = spinPlan(state, reducedMotion());
     art.target = plan.target;
     art.k = plan.k;
@@ -387,6 +428,44 @@ if (typeof document !== 'undefined') (function () {
     art.raf = requestAnimationFrame(spinFrame);
   }
 
+  // ---- Fullscreen ----
+  function layoutFs() {
+    if (!fsOn()) return;
+    const l = fsLayout(innerWidth, innerHeight);
+    if ($('now').dataset.art !== l) { $('now').dataset.art = l; paintArt(); }
+  }
+  function setFs(on) {
+    if (on === fsOn()) return;
+    $('now').classList.toggle('fs', on);
+    document.body.classList.toggle('fs-open', on);
+    if (on) {
+      layoutFs();
+      try { const r = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* not available */ }
+    } else {
+      delete $('now').dataset.art;
+      try { if (document.fullscreenElement) { const r = document.exitFullscreen(); if (r && r.catch) r.catch(() => {}); } } catch (e) { /* ignore */ }
+    }
+    paintArt();
+  }
+  function wireFs() {
+    $('b-fs').onclick = () => setFs(true);
+    $('b-fs-close').onclick = () => setFs(false);
+    addEventListener('resize', layoutFs);
+    addEventListener('keydown', (e) => { if (e.key === 'Escape' && fsOn()) setFs(false); });
+    // the browser's own Esc leaves fullscreen without telling our keydown handler
+    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && fsOn()) setFs(false); });
+    let t0 = null;
+    $('now').addEventListener('touchstart', (e) => {
+      t0 = fsOn() && e.touches.length === 1 && !e.target.closest('#bar') ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+    }, { passive: true });
+    $('now').addEventListener('touchend', (e) => {
+      if (!t0 || !e.changedTouches.length) return;
+      const dy = e.changedTouches[0].clientY - t0.y, dx = e.changedTouches[0].clientX - t0.x;
+      t0 = null;
+      if (dy > 90 && Math.abs(dx) < 60) setFs(false); // swipe down
+    }, { passive: true });
+  }
+
   // ---- Now Playing ----
   let dragging = null, volTimer = 0, volHold = 0;
   function renderNow() {
@@ -396,15 +475,17 @@ if (typeof document !== 'undefined') (function () {
     document.title = song ? (song.title || '') + ' · cliamp' : 'cliamp';
     if (!st) return;
     if (song) {
-      $('title').textContent = song.title || '';
+      $('trackno').textContent = song.track_number ? String(song.track_number).padStart(2, '0') + ' · ' : '';
+      $('titletext').textContent = song.title || '';
       $('artist').textContent = song.artist || '';
       updateArt(song);
-      $('album').textContent = song.album || '';
+      $('album').textContent = [song.album, song.year].filter(Boolean).join(' · ');
       $('dur').textContent = fmtTime(st.duration);
       $('bar').setAttribute('aria-valuemax', Math.round(Number(st.duration) || 0));
       $('bar').classList.toggle('unseekable', !st.seekable);
     }
     if (!song) updateArt(null);
+    renderNext();
     setSpin(st.state);
     setIcon($('b-toggle'), st.state === 'playing' ? 'pause' : 'play');
     $('b-shuffle').classList.toggle('on', !!st.shuffle);
@@ -564,8 +645,8 @@ if (typeof document !== 'undefined') (function () {
   // path string fails with invalid_params. Drop only row bookkeeping.
   const trackArg = (t) => { const o = Object.assign({}, t); delete o.index; delete o.queued; return o; };
   const playTrack = (t) => cmd('track.play', { track: trackArg(t) }, true);
-  const nextTrack = (t) => cmd('track.queue', { track: trackArg(t) }, true);
-  const trackMenu = (t) => [{ label: 'Play', fn: () => playTrack(t) }, { label: 'Play next', fn: () => nextTrack(t) }];
+  const queueTrackNext = (t) => cmd('track.queue', { track: trackArg(t) }, true);
+  const trackMenu = (t) => [{ label: 'Play', fn: () => playTrack(t) }, { label: 'Play next', fn: () => queueTrackNext(t) }];
   // replacing the queue is audible and destructive — confirm first (spec v3).
   const replaceMenu = (kind, provider, id, name) => [{
     label: '▶ play ' + kind, fn: () => {
@@ -801,6 +882,7 @@ if (typeof document !== 'undefined') (function () {
   document.querySelectorAll('[data-icon]').forEach((el) => setIcon(el, el.dataset.icon));
   window.addEventListener('hashchange', route);
   wireNow();
+  wireFs();
   wireSearch();
   renderQueue();
   route();

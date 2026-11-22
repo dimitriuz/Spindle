@@ -1,12 +1,15 @@
 package art
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -186,7 +189,11 @@ func (n *Navidrome) Resolve(ctx context.Context, kind Kind, streamURL string) (s
 	}
 	q.Set("id", artID)
 	srv := sha256.Sum256([]byte(base))
-	key := "nd:" + hex.EncodeToString(srv[:4]) + ":" + string(kind) + ":" + id
+	kname := string(kind)
+	if kind == Disc {
+		kname = "disc2" // v2: earlier builds cached the album cover Navidrome sends when there is no disc
+	}
+	key := "nd:" + hex.EncodeToString(srv[:4]) + ":" + kname + ":" + id
 	target := n.endpoint(base, "getCoverArt", auth, q)
 	return key, func() ([]byte, error) {
 		resp, err := n.get(ctx, target)
@@ -209,6 +216,9 @@ func (n *Navidrome) Resolve(ctx context.Context, kind Kind, streamURL string) (s
 		if len(data) > MaxImageBytes || !strings.HasPrefix(http.DetectContentType(data), "image/") {
 			return nil, ErrNoArt // an error document or an oversize file is not art
 		}
+		if kind == Disc && !looksLikeDisc(data) {
+			return nil, ErrNoArt // Navidrome answers dc- ids with the album cover when there is no disc.png
+		}
 		return data, nil
 	}, nil
 }
@@ -230,4 +240,20 @@ func (n *Navidrome) Info(ctx context.Context, streamURL string) (Info, error) {
 		return Info{}, ErrNoInfo
 	}
 	return m.info, nil
+}
+
+// looksLikeDisc tells a disc image from the album cover Navidrome sends in its
+// place: a disc is a PNG whose four corners are transparent.
+func looksLikeDisc(data []byte) bool {
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return false // not a PNG (covers are usually JPEG)
+	}
+	b := img.Bounds()
+	for _, p := range []image.Point{{b.Min.X, b.Min.Y}, {b.Max.X - 1, b.Min.Y}, {b.Min.X, b.Max.Y - 1}, {b.Max.X - 1, b.Max.Y - 1}} {
+		if _, _, _, a := img.At(p.X, p.Y).RGBA(); a > 0x0fff { // more than ~6% opaque
+			return false
+		}
+	}
+	return true
 }

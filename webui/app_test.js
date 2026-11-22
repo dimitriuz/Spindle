@@ -115,8 +115,8 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
   });
 
   await ok('artUrl encodes the track path', () => {
-    assert.equal(A.artUrl('disc', '/m/a b?x&y.flac'), '/api/art/disc?path=%2Fm%2Fa%20b%3Fx%26y.flac');
-    assert.equal(A.artUrl('cover', 'https://h/rest/stream?id=1'), '/api/art/cover?path=https%3A%2F%2Fh%2Frest%2Fstream%3Fid%3D1');
+    assert.equal(A.artUrl('disc', '/m/a b?x&y.flac'), '/api/art/disc?v=2&path=%2Fm%2Fa%20b%3Fx%26y.flac');
+    assert.equal(A.artUrl('cover', 'https://h/rest/stream?id=1'), '/api/art/cover?v=2&path=https%3A%2F%2Fh%2Frest%2Fstream%3Fid%3D1');
   });
 
   await ok('spinStep: smooth start, settles at speed, monotonic', () => {
@@ -157,6 +157,16 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.deepEqual(A.spinPlan('stopped', false), { target: 0, k: 2.2 });
     assert.deepEqual(A.spinPlan(undefined, false), { target: 0, k: 2.2 });
     assert.equal(A.spinPlan('playing', true).target, 0, 'reduced motion: never spin');
+  });
+
+  await ok('no pure function is shadowed by another declaration in app.js', () => {
+    // a closure helper once reused the name nextTrack, so the page ran a player
+    // command where it meant to read the queue
+    const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'app.js'), 'utf8');
+    for (const name of Object.keys(A)) {
+      const decls = src.match(new RegExp('(?:^|[^.\\w])(?:function\\s+' + name + '\\s*\\(|(?:const|let|var)\\s+' + name + '\\b)', 'gm')) || [];
+      assert.ok(decls.length <= 1, name + ' is declared ' + decls.length + ' times');
+    }
   });
 
   await ok('nextTrack: play-next first, then the row after the current one', () => {

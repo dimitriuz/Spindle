@@ -1,7 +1,13 @@
 package art
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +21,7 @@ type fakeND struct {
 	songCalls atomic.Int32
 	lastQuery map[string]url.Values // by id
 	noDisc    bool
+	discBytes func() []byte // what dc- ids return; nil = a transparent-cornered PNG
 }
 
 func newFakeND(t *testing.T) *fakeND {
@@ -34,6 +41,10 @@ func newFakeND(t *testing.T) *fakeND {
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
+		if strings.HasPrefix(id, "dc-") && f.discBytes != nil {
+			w.Write(f.discBytes())
+			return
+		}
 		w.Write(pngBytes(t, 8, 8))
 	})
 	f.srv = httptest.NewServer(mux)
@@ -151,5 +162,56 @@ func TestArtKeyHasNoCredentials(t *testing.T) {
 	}
 	if !strings.Contains(key, "cover") || !strings.Contains(key, "A1") {
 		t.Fatalf("key should name kind and album: %s", key)
+	}
+}
+
+// Navidrome answers dc-<album> with the album COVER when there is no disc.png.
+// A real disc image is a round picture on transparent corners.
+func TestCoverReturnedForDiscIsNotADisc(t *testing.T) {
+	opaque := func() []byte {
+		var b bytes.Buffer
+		img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+		draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{200, 30, 30, 255}}, image.Point{}, draw.Src)
+		_ = png.Encode(&b, img)
+		return b.Bytes()
+	}
+	jpg := func() []byte {
+		var b bytes.Buffer
+		_ = jpeg.Encode(&b, image.NewRGBA(image.Rect(0, 0, 16, 16)), nil)
+		return b.Bytes()
+	}
+	for name, fn := range map[string]func() []byte{"opaque png cover": opaque, "jpeg cover": jpg} {
+		f := newFakeND(t)
+		f.discBytes = fn
+		n := &Navidrome{HTTP: f.srv.Client()}
+		if _, _, err := fetchBytes(t, n, Disc, f.stream("")); err != ErrNoArt {
+			t.Fatalf("%s must be no disc, got %v", name, err)
+		}
+		// the same bytes are fine as a COVER
+		f.discBytes = nil
+		if _, _, err := fetchBytes(t, n, Cover, f.stream("")); err != nil {
+			t.Fatalf("cover: %v", err)
+		}
+	}
+}
+
+func TestRoundDiscOnTransparentCornersIsKept(t *testing.T) {
+	f := newFakeND(t)
+	f.discBytes = func() []byte {
+		img := image.NewRGBA(image.Rect(0, 0, 32, 32)) // transparent
+		for y := 0; y < 32; y++ {
+			for x := 0; x < 32; x++ {
+				if dx, dy := x-16, y-16; dx*dx+dy*dy < 14*14 {
+					img.Set(x, y, color.RGBA{220, 220, 220, 255})
+				}
+			}
+		}
+		var b bytes.Buffer
+		_ = png.Encode(&b, img)
+		return b.Bytes()
+	}
+	n := &Navidrome{HTTP: f.srv.Client()}
+	if _, _, err := fetchBytes(t, n, Disc, f.stream("")); err != nil {
+		t.Fatalf("a round disc must be accepted: %v", err)
 	}
 }

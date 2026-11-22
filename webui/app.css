@@ -46,6 +46,9 @@ body[data-tab=browse] #tabs [data-tab=browse], body[data-tab=search] #tabs [data
 /* Now Playing */
 #player { display: flex; flex-direction: column; gap: 16px; align-items: center; }
 .cover { width: min(100%, 44vh, 420px); aspect-ratio: 1; background: var(--art); border-radius: 12px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
+.meta { display: contents; }
+.meta > * { width: 100%; text-align: center; }
+.disc-slide { position: absolute; inset: 0; z-index: 0; }
 .cover .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cover .art[hidden], .cover .ph[hidden] { display: none; }
 .cover.has-disc { cursor: pointer; }
@@ -60,7 +63,6 @@ body[data-tab=browse] #tabs [data-tab=browse], body[data-tab=search] #tabs [data
 @media (prefers-reduced-motion: reduce) { .cover .art { transition: none; } }
 .ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 .ph svg, .idle-art svg { width: 30%; height: 30%; color: var(--dim); }
-.meta { width: 100%; text-align: center; }
 .meta h1 { font-size: 22px; line-height: 1.25; overflow-wrap: anywhere; }
 .meta p { font-size: 16px; }
 .seek { width: 100%; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
@@ -79,6 +81,45 @@ input[type=range] { flex: 1; height: 44px; background: transparent; accent-color
 .idle { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 40px 0; }
 .idle-art { width: 160px; height: 160px; background: var(--art); border-radius: 12px; display: flex; align-items: center; justify-content: center; }
 .idle p { font-size: 20px; color: var(--dim); }
+
+/* Fullscreen Now Playing: the same view, restyled as a fixed layer. */
+.fs-only, .fs-inline, .fs-bg { display: none; }
+.fs-bg { position: absolute; inset: 0; z-index: 0; background: center / cover no-repeat; filter: blur(48px) brightness(.4) saturate(1.3); transform: scale(1.25); }
+#now.fs { position: fixed; inset: 0; z-index: 25; max-width: none; margin: 0; width: auto; overflow: hidden; border: 0; display: block;
+  padding: max(14px, env(safe-area-inset-top)) 20px max(14px, env(safe-area-inset-bottom)); background: var(--bg);
+  --s: min(44vh, 60vw); }
+#now.fs[data-art=both] { --s: min(40vh, calc((100vw - 120px) / 2)); }
+#now.fs .fs-bg { display: block; }
+#now.fs .fs-only { display: block; }
+#now.fs .fs-inline { display: inline; }
+#now.fs button.fs-only { display: inline-flex; }
+#now.fs .extras, #now.fs .vol { display: none; }
+#now.fs .fs-close { position: absolute; z-index: 3; top: max(8px, env(safe-area-inset-top)); right: 8px; }
+#now.fs #player { position: relative; z-index: 1; height: 100%; width: 100%; max-width: 920px; margin: 0 auto; justify-content: center; gap: 12px; }
+#now.fs .artist-line { order: -2; font-size: 18px; }
+#now.fs .avatar { width: 36px; height: 36px; }
+#now.fs .cover { order: -1; width: var(--s); margin: 0; background: none; box-shadow: none; }
+#now.fs .meta h1 { font-size: clamp(22px, 4.2vw, 34px); }
+#now.fs #album { font-size: 17px; }
+#now.fs .tech { text-align: center; font-size: 14px; letter-spacing: .02em; color: var(--dim); margin-top: -6px; }
+#now.fs .next { text-align: center; font-size: 15px; color: var(--dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#now.fs #art-cover, #now.fs .cover .ph { border-radius: 12px; }
+#now.fs #art-cover { box-shadow: 0 14px 44px rgba(0,0,0,.55); }
+#now.fs .cover .ph { background: var(--art); z-index: 1; }
+/* one face at a time: the disc peeks out from behind the cover */
+#now.fs .cover.peek { overflow: visible; translate: -17.5% 0; }
+#now.fs .cover.peek #art-cover, #now.fs .cover.peek .ph { z-index: 1; }
+#now.fs .cover.peek .disc-slide { transform: translateX(0); transition: transform .7s cubic-bezier(.3,.7,.2,1); }
+#now.fs .cover.peek.out .disc-slide { transform: translateX(35%); }
+/* wide: cover and disc side by side */
+#now.fs[data-art=both] .cover { width: auto; aspect-ratio: auto; overflow: visible; display: flex; justify-content: center; gap: 28px; cursor: default; }
+#now.fs[data-art=both] .cover::after { display: none; }
+#now.fs[data-art=both] #art-cover, #now.fs[data-art=both] .cover .ph, #now.fs[data-art=both] .disc-slide { position: relative; inset: auto; width: var(--s); height: var(--s); flex: none; }
+@media (max-height: 480px) {
+  #now.fs .transport, #now.fs .next { display: none; }
+  #now.fs #player { gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) { #now.fs .cover.peek .disc-slide { transition: none; } }
 
 /* Lists */
 .head { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 8px; }
