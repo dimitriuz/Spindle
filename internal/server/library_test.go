@@ -200,3 +200,16 @@ func TestLyricsNotFoundMaps502(t *testing.T) {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestLibraryAlbumsPassTheProvidersSortOn(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"albums":[]}`)}}
+	h := New(libConfig(t, fr))
+	if rec := libGet(t, h, "/api/library/navidrome/albums?sort=newest"); rec.Code != 200 || fr.lastParams["sort"] != "newest" {
+		t.Fatalf("%d %v", rec.Code, fr.lastParams)
+	}
+	for _, bad := range []string{"/api/library/navidrome/albums?sort=a/b", "/api/library/navidrome/albums?sort=" + strings.Repeat("a", 41), "/api/library/navidrome/artists?sort=newest", "/api/library/navidrome/albums?sort=a%20b"} {
+		if rec := libGet(t, h, bad); rec.Code != 400 {
+			t.Fatalf("%s: %d", bad, rec.Code)
+		}
+	}
+}

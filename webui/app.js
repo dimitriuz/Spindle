@@ -123,10 +123,35 @@ function facetValues(items, get) {
   for (const o of items) for (const v of get(o) || []) if (v) n.set(v, (n.get(v) || 0) + 1);
   return [...n].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]))).map(([v, c]) => ({ v, n: c }));
 }
+// Sort and filter presets of the collection pages. Rows carry `attrs` (artist, genre,
+// decade, year, tracks, albums, section) that the sorts and facets read.
+const nameCmp = (a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { numeric: true, sensitivity: 'base' });
+const numCmp = (key, desc) => (a, b) => {
+  const x = a.attrs && a.attrs[key], y = b.attrs && b.attrs[key];
+  if (!x && !y) return 0;
+  if (!x) return 1; // unknown goes last either way
+  if (!y) return -1;
+  return desc ? y - x : x - y;
+};
+const textCmp = (key) => (a, b) => String((a.attrs && a.attrs[key]) || '').localeCompare(String((b.attrs && b.attrs[key]) || ''), undefined, { sensitivity: 'base' });
+const attrFacet = (id, label) => ({ id, label, get: (o) => [o.attrs && o.attrs[id]] });
+const SORT_NAME = { id: 'name', label: 'Name', cmp: nameCmp };
+const LIST_VIEWS = {
+  albums: { search: true, facets: [attrFacet('artist', 'Artist'), attrFacet('genre', 'Genre'), attrFacet('decade', 'Decade')] },
+  artists: { search: true, sorts: [SORT_NAME, { id: 'albums', label: 'Most albums', cmp: numCmp('albums', true) }] },
+  playlists: { search: true, sorts: [SORT_NAME, { id: 'tracks', label: 'Most tracks', cmp: numCmp('tracks', true) }], facets: [attrFacet('section', 'Section')] },
+  'artist-albums': { search: true, sorts: [{ id: 'new', label: 'Newest first', cmp: numCmp('year', true) }, { id: 'old', label: 'Oldest first', cmp: numCmp('year', false) }, SORT_NAME] },
+  catalog: { search: true, sorts: [SORT_NAME] },
+  favorites: { search: true, sorts: [SORT_NAME] },
+};
+// the provider's own album orders (it sorts the whole library, not just what is loaded)
+const ALBUM_ORDERS = [['', 'Default order'], ['alphabeticalByName', 'Name'], ['alphabeticalByArtist', 'Artist'], ['newest', 'Newest added'], ['recent', 'Recently played'], ['frequent', 'Most played'], ['starred', 'Starred']];
+
 // viewRows: the items to show under a sort, facet choices and "hide offline"
 function viewRows(all, view, sorts, facets) {
   let rows = all.filter((o) => {
     if (view.hideDead && o.dead) return false;
+    if (view.q && !(String(o.title || '') + ' ' + String(o.sub || '')).toLowerCase().includes(view.q.toLowerCase())) return false;
     for (const f of facets || []) { const want = view.facets[f.id]; if (want && !(f.get(o) || []).includes(want)) return false; }
     return true;
   });
@@ -395,7 +420,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -1064,8 +1089,8 @@ if (typeof document !== 'undefined') (function () {
     let paintTimer = 0;
     const repaint = () => { if (!paintTimer) paintTimer = setTimeout(() => { paintTimer = 0; if (!dead) paint(); }, 150); };
     // sort, facet filters and "hide offline" apply to what is loaded so far
-    const view = { sort: '', facets: {}, hideDead: true };
-    const narrowed = () => !!view.sort || Object.values(view.facets).some(Boolean);
+    const view = { sort: '', facets: {}, hideDead: true, q: '' };
+    const narrowed = () => !!view.sort || !!view.q || Object.values(view.facets).some(Boolean);
     const shown = () => viewRows(all, view, c.sorts, c.facets);
     const note = () => { status.textContent = done && !shown().length ? (all.length ? 'Nothing matches the filters' : c.empty || 'Nothing here') : ''; };
     const paint = () => { ul.className = mode === 'tiles' ? 'grid' : 'list'; ul.replaceChildren(...shown().map(make)); note(); };
@@ -1125,7 +1150,7 @@ if (typeof document !== 'undefined') (function () {
       return b;
     };
     const toggle = c.modes ? h('div', { class: 'vtoggle', role: 'group', 'aria-label': 'View' }, vbtn('list', 'queue', 'List view'), vbtn('tiles', 'grid', 'Tile view')) : null;
-    const tools = c.sorts || c.facets ? h('div', { class: 'viewtools' }) : null;
+    const tools = c.sorts || c.facets || c.search ? h('div', { class: 'viewtools' }) : null;
     let toolsLate = false, toolsSig = '';
     function buildTools() {
       if (!tools) return;
@@ -1133,13 +1158,18 @@ if (typeof document !== 'undefined') (function () {
       if (tools.contains(document.activeElement) && document.activeElement !== tools) { toolsLate = true; return; }
       toolsLate = false;
       const kids = [];
+      if (c.search) {
+        const q = h('input', { type: 'search', class: 'vq', placeholder: 'Filter', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Filter this list', value: view.q,
+          oninput: () => { view.q = q.value.trim(); repaint(); fill(); } });
+        kids.push(q);
+      }
       const pick = (label, value, opts, onchange) => {
         const sel = h('select', { class: 'vsel', 'aria-label': label, onchange: () => onchange(sel.value) },
           h('option', { value: '' }, label), opts.map((o) => h('option', { value: o.v }, o.label)));
         sel.value = value;
         return sel;
       };
-      if (c.sorts) kids.push(pick('Sort', view.sort, c.sorts.filter((x) => x.cmp).map((x) => ({ v: x.id, label: x.label })), (v) => { view.sort = v; paint(); }));
+      if (c.sorts && c.sorts.some((x) => x.cmp)) kids.push(pick('Sort', view.sort, c.sorts.filter((x) => x.cmp).map((x) => ({ v: x.id, label: x.label })), (v) => { view.sort = v; paint(); }));
       for (const f of c.facets || []) {
         const vals = facetValues(all, f.get).slice(0, 60);
         if (vals.length < 2 && !view.facets[f.id]) continue;
@@ -1150,7 +1180,7 @@ if (typeof document !== 'undefined') (function () {
         cb.checked = view.hideDead;
         kids.push(h('label', { class: 'vchk' }, cb, ' Hide offline'));
       }
-      const sig = kids.map((k) => k.outerHTML).join('') + JSON.stringify([view.sort, view.facets, view.hideDead]);
+      const sig = kids.map((k) => k.outerHTML).join('') + JSON.stringify([view.sort, view.facets, view.hideDead]); // the filter text is not in it: the box is never rebuilt for it
       if (sig === toolsSig) return; // nothing changed: keep the controls as they are
       toolsSig = sig;
       tools.replaceChildren(...kids);
@@ -1425,11 +1455,11 @@ if (typeof document !== 'undefined') (function () {
     const chips = h('div', { class: 'seg' }, FAV_KINDS.filter(([k]) => k === 'all' || counts[k]).map(([k, label]) =>
       h('button', { class: k === favKind ? 'on' : null, onclick: () => { favKind = k; renderFavorites(); } }, label + (counts[k] ? ' ' + counts[k] : ''))));
     const rows = favFilter(favItems, favKind);
-    favCol = collection({ my: nav, key: viewModeKey('favorites'), modes: true, page: chunkPage(() => rows), opts: favOpts,
+    favCol = collection({ my: nav, key: viewModeKey('favorites'), modes: true, ...LIST_VIEWS.favorites, page: chunkPage(() => rows), opts: favOpts,
       empty: 'Nothing here yet. Tap the heart on anything to keep it.' });
     $('favorites').replaceChildren(...[head('Favorites'), chips,
       favPartial && msg('empty', 'The player is offline: tracks and stations are not shown'),
-      listBar(favCol.toggle), ...favCol.body].filter(Boolean));
+      listBar(favCol.toggle), favCol.tools, ...favCol.body].filter(Boolean));
     favCol.start();
   }
 
@@ -1536,9 +1566,13 @@ if (typeof document !== 'undefined') (function () {
     let off = 0;
     const radio = prov === 'radio' && kind === 'catalog';
     const seenIds = new Set();
-    const col = collection({ my, key: viewModeKey('browse', prov, kind), modes: true, empty: 'Nothing here',
+    const orderKey = 'order:' + prov + ':' + kind;
+    const ordered = kind === 'albums'; // the provider sorts the whole library
+    let order = '';
+    if (ordered) { try { order = localStorage.getItem(orderKey) || ''; } catch (e) { /* storage may be off */ } if (!ALBUM_ORDERS.some((o) => o[0] === order)) order = ''; }
+    const makeCol = () => collection({ my, key: viewModeKey('browse', prov, kind), modes: true, empty: 'Nothing here',
       page: async () => {
-        const r = await api.get(listUrl(prov, kind, radio ? seenIds.size : off));
+        const r = await api.get(listUrl(prov, kind, radio ? seenIds.size : off) + (order ? '&sort=' + order : ''));
         let rows = r[kind] || r.playlists || [];
         if (radio) {
           // cliamp's station list ignores the offset and answers with everything it has loaded so far, a bit more each time
@@ -1550,8 +1584,19 @@ if (typeof document !== 'undefined') (function () {
         return { rows, done: pageDone(rows.length) };
       },
       opts: (row) => browseOpts(prov, kind, row),
-      ...(radio ? radioView(my) : {}) });
-    if (!radio) { show(hdr, listBar(col.toggle), ...col.body); col.start(); return; }
+      ...(radio ? radioView(my) : LIST_VIEWS[kind] || LIST_VIEWS.catalog) });
+    let col = makeCol();
+    if (!radio) {
+      const sortSel = ordered ? h('select', { class: 'vsel', 'aria-label': 'Order', onchange: () => {
+        order = sortSel.value;
+        try { localStorage.setItem(orderKey, order); } catch (e) { /* storage may be off */ }
+        col.destroy(); off = 0; col = makeCol();
+        show(hdr, listBar(sortSel, col.toggle), col.tools, ...col.body); col.start();
+      } }, ALBUM_ORDERS.map(([v, l]) => h('option', { value: v }, l))) : null;
+      if (sortSel) sortSel.value = order;
+      show(hdr, listBar(sortSel, col.toggle), col.tools, ...col.body); col.start();
+      return;
+    }
     // radio: a search box over the public station directory replaces the catalog while it has text
     const box = h('input', { type: 'search', class: 'filter', placeholder: 'Search stations by name, genre or country', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Search stations' });
     const results = h('div', { class: 'stnresults', hidden: true });
@@ -1582,6 +1627,7 @@ if (typeof document !== 'undefined') (function () {
   const byNum = (k) => (a, b) => ((b.meta && b.meta[k]) || 0) - ((a.meta && a.meta[k]) || 0);
   function radioView(my, hasMeta) {
     return {
+      search: true,
       sorts: [{ id: '', label: 'Default' }, { id: 'name', label: 'Name', cmp: (a, b) => String(a.title).localeCompare(String(b.title)) },
         { id: 'votes', label: 'Most popular', cmp: byNum('votes') }, { id: 'bitrate', label: 'Highest bitrate', cmp: byNum('bitrate') }],
       facets: [
@@ -1619,7 +1665,9 @@ if (typeof document !== 'undefined') (function () {
     const drillBase = '#browse/' + enc(prov) + '/' + kind + '/';
     const coll = (k, href, sub, end, tkind) => {
       const hh = heartBtn({ key: favKey(k, prov, row.id), req: { kind: k, provider: prov, id: row.id, title: name, subtitle: k === 'artist' ? '' : (row.artist || '') } });
-      return { title: name, sub, end, href, tkind, art: itemArtUrl(k, prov, row.id), heart: hh, more: collectionMore(k, prov, row.id, hh),
+      const attrs = { artist: row.artist || '', genre: row.genre || '', year: Number(row.year) || 0, decade: row.year ? Math.floor(row.year / 10) * 10 + 's' : '',
+        tracks: Number(row.track_count) || 0, albums: Number(row.album_count) || 0, section: row.section || '' };
+      return { title: name, sub, end, href, tkind, attrs, art: itemArtUrl(k, prov, row.id), heart: hh, more: collectionMore(k, prov, row.id, hh),
         onPlay: k === 'album' ? () => enq({ kind: 'album', provider: prov, id: row.id, mode: 'play' }) : null };
     };
     if (kind === 'playlists') {
@@ -1714,7 +1762,7 @@ if (typeof document !== 'undefined') (function () {
         h('div', { class: 'afacts' }, h('div', { class: 'aname' }, f.name || ''), f.artist ? h('div', { class: 'aartist' }, f.artist) : null,
           h('div', { class: 'ameta dim' }, albumFactsLine(f))));
     };
-    const col = collection({ my, key: viewModeKey('browse', prov, 'artist-albums'), modes: isArtist, empty: isArtist ? 'No albums' : 'No tracks',
+    const col = collection({ my, key: viewModeKey('browse', prov, 'artist-albums'), modes: isArtist, ...(isArtist ? LIST_VIEWS['artist-albums'] : {}), empty: isArtist ? 'No albums' : 'No tracks',
       page: async () => {
         const r = await api.get(url(off));
         const rows = (isArtist ? r.albums : r.tracks) || [];
@@ -1732,7 +1780,7 @@ if (typeof document !== 'undefined') (function () {
     const actions = h('div', { class: 'hdr-actions' }, hheart,
       h('button', { class: 'btn primary', onclick: () => go('play') }, '▶ Play'),
       h('button', { class: 'btn', onclick: () => go('append') }, '+ Add'));
-    show(head(title, back, actions), info, listBar(col.toggle), ...col.body);
+    show(head(title, back, actions), info, listBar(col.toggle), col.tools, ...col.body);
     col.start();
   }
 

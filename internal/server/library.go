@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"cliamp-web/internal/ipc"
@@ -98,6 +99,14 @@ func (s *serverState) libraryList(w http.ResponseWriter, r *http.Request) {
 	}
 	// kind→op whitelist: only listing ops exist under this route; anything
 	// else (provider.load…) never reaches the player over a GET.
+	if sort := r.URL.Query().Get("sort"); sort != "" {
+		// the provider's own album orders (alphabeticalByName, newest, ...): a plain word, passed on as is
+		if r.PathValue("kind") != "albums" || len(sort) > 40 || strings.Trim(sort, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+			return
+		}
+		params["sort"] = sort
+	}
 	switch r.PathValue("kind") {
 	case "playlists", "albums", "artists", "catalog":
 		s.libraryGET(w, r, s.cfg.listCache, "provider."+r.PathValue("kind"), params)

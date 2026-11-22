@@ -108,6 +108,16 @@ sub-folder's) as a small cached thumbnail. Everything else gets a coloured place
 Lists load as you scroll, one page at a time, with no "More" button. Lists that are already complete (a folder,
 favorites) are drawn in chunks.
 
+### Sorting and filtering
+
+Every collection page (albums, artists, playlists, an artist's albums, favorites, radio) has a filter box
+and, where it makes sense, sort and facet drop-downs (artist, genre, decade, country, format, ...). They
+work on the rows loaded so far; the list keeps loading while few rows match. Albums also have an
+**Order** drop-down that asks the provider to sort the whole library (name, artist, newest, recently or
+most played, starred). Radio rows show format, bitrate and country from the public Radio Browser
+directory, offline stations are hidden by default, and the search box on the Radio page searches the
+whole directory by name, genre and country.
+
 ## Item menu
 
 Every list item has a "..." menu (right-click works too). On a narrow or touch

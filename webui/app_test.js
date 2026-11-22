@@ -278,6 +278,22 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(names({ facets: { country: 'DE', tag: 'jazz' }, hideDead: true }), 'B', 'facets combine');
     assert.equal(names({ sort: 'nope' }), 'BACD', 'an unknown sort is ignored');
   });
+  await ok('list view presets', () => {
+    const mk = (title, attrs, sub) => ({ title, sub, attrs });
+    const rows = [mk('Album 10', { year: 1990, artist: 'B', decade: '1990s' }, 'B · 1990'), mk('Album 2', { year: 2005, artist: 'A', decade: '2000s' }, 'A · 2005'), mk('Zed', {}, ''), mk('Ä-side', { year: 1975, artist: 'C', decade: '1970s' })];
+    const pv = A.LIST_VIEWS['artist-albums'];
+    const names = (view, preset) => A.viewRows(rows, { sort: '', facets: {}, hideDead: false, q: '', ...view }, (preset || pv).sorts, (preset || pv).facets).map((o) => o.title).join(',');
+    assert.equal(names({ sort: 'new' }), 'Album 2,Album 10,Ä-side,Zed', 'newest first, no year last');
+    assert.equal(names({ sort: 'old' }), 'Ä-side,Album 10,Album 2,Zed', 'oldest first, no year still last');
+    assert.equal(names({ sort: 'name' }), 'Ä-side,Album 2,Album 10,Zed', 'natural order: Ä with A, 2 before 10');
+    assert.equal(names({ q: 'a · 20' }), 'Album 2', 'the text filter reads title and subtitle, ignoring case');
+    assert.equal(names({ q: 'zzz' }), '');
+    const al = A.LIST_VIEWS.albums;
+    assert.deepEqual(al.facets.map((f) => f.id), ['artist', 'genre', 'decade']);
+    assert.equal(names({ facets: { decade: '1990s' } }, al), 'Album 10');
+    assert.deepEqual(A.ALBUM_ORDERS[0], ['', 'Default order']);
+    assert.ok(A.ALBUM_ORDERS.every(([v]) => /^[A-Za-z]*$/.test(v)), 'orders are plain words the bridge accepts');
+  });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
     assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);
