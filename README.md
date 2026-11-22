@@ -68,6 +68,11 @@ when playback stops.
   the disc is `disc.png` or `cdart.png`; the artist photo is `artist.jpg|.png`
   in the album folder or its parent. Only files of tracks cliamp has reported
   are ever read.
+- **No disc image?** The bridge draws one from the cover (a printed CD with a
+  clear rim, hub and spindle hole) and caches it, so every album with a cover
+  has a disc to peek, flip and spin. Navidrome answers disc requests with the
+  cover when there is no `disc.png`; that is detected (a real disc is a PNG with
+  transparent corners) and replaced by the generated one.
 - **Radio and other providers** have no artwork: the placeholder stays.
 
 Pictures are fetched once and cached under `<data-dir>/art/` (200 MB cap, least

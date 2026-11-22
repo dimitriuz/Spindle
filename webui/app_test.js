@@ -115,8 +115,8 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
   });
 
   await ok('artUrl encodes the track path', () => {
-    assert.equal(A.artUrl('disc', '/m/a b?x&y.flac'), '/api/art/disc?v=2&path=%2Fm%2Fa%20b%3Fx%26y.flac');
-    assert.equal(A.artUrl('cover', 'https://h/rest/stream?id=1'), '/api/art/cover?v=2&path=https%3A%2F%2Fh%2Frest%2Fstream%3Fid%3D1');
+    assert.equal(A.artUrl('disc', '/m/a b?x&y.flac'), '/api/art/disc?v=3&path=%2Fm%2Fa%20b%3Fx%26y.flac');
+    assert.equal(A.artUrl('cover', 'https://h/rest/stream?id=1'), '/api/art/cover?v=3&path=https%3A%2F%2Fh%2Frest%2Fstream%3Fid%3D1');
   });
 
   await ok('spinStep: smooth start, settles at speed, monotonic', () => {

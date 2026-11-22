@@ -46,8 +46,8 @@ function curVolume(st) { return st && st.volume != null ? Number(st.volume) : 0;
 
 // ---- art ----
 // v changes whenever what the bridge answers for a URL changes (art is cached for
-// a day): v=2 retired the album covers that were once served as discs.
-const ART_V = 2;
+// a day): v=2 retired the album covers once served as discs; v=3: albums without a disc now get a generated one.
+const ART_V = 3;
 const artUrl = (kind, path) => '/api/art/' + kind + '?v=' + ART_V + '&path=' + encodeURIComponent(path);
 
 // The disc is a platter driven by a motor, so its speed is not set, it is

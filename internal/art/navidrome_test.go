@@ -17,11 +17,12 @@ import (
 )
 
 type fakeND struct {
-	srv       *httptest.Server
-	songCalls atomic.Int32
-	lastQuery map[string]url.Values // by id
-	noDisc    bool
-	discBytes func() []byte // what dc- ids return; nil = a transparent-cornered PNG
+	srv        *httptest.Server
+	songCalls  atomic.Int32
+	lastQuery  map[string]url.Values // by id
+	noDisc     bool
+	discBytes  func() []byte // what dc- ids return; nil = a transparent-cornered PNG
+	coverBytes func() []byte // what al-/ar- ids return; nil = a small PNG
 }
 
 func newFakeND(t *testing.T) *fakeND {
@@ -43,6 +44,11 @@ func newFakeND(t *testing.T) *fakeND {
 		w.Header().Set("Content-Type", "image/png")
 		if strings.HasPrefix(id, "dc-") && f.discBytes != nil {
 			w.Write(f.discBytes())
+			return
+		}
+		if f.coverBytes != nil {
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Write(f.coverBytes())
 			return
 		}
 		w.Write(pngBytes(t, 8, 8))

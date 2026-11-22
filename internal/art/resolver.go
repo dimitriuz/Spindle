@@ -2,6 +2,7 @@ package art
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -47,6 +48,30 @@ func NewResolver(o Options) (*Resolver, error) {
 // Transient failures (Navidrome unreachable) come back as other errors and
 // are not remembered.
 func (r *Resolver) Get(ctx context.Context, kind Kind, trackPath string) (*Image, error) {
+	img, err := r.get(ctx, kind, trackPath)
+	if kind == Disc && errors.Is(err, ErrNoArt) {
+		return r.synthDisc(ctx, trackPath) // no disc image anywhere: draw one from the cover
+	}
+	return img, err
+}
+
+// synthDisc makes (and caches) a disc from the album cover. No cover, no disc.
+func (r *Resolver) synthDisc(ctx context.Context, trackPath string) (*Image, error) {
+	cover, err := r.get(ctx, Cover, trackPath)
+	if err != nil {
+		return nil, err
+	}
+	// v1 in the key: bump it when the artwork of SynthDisc changes
+	return r.cache.Do("synth:v1:"+cover.Key, func() ([]byte, error) {
+		out, err := SynthDisc(cover.Data)
+		if err != nil {
+			return nil, ErrNoArt // a cover we cannot decode (webp, ...) gives no disc
+		}
+		return out, nil
+	})
+}
+
+func (r *Resolver) get(ctx context.Context, kind Kind, trackPath string) (*Image, error) {
 	// the fetch is shared between callers: one browser giving up must not
 	// fail the others, so it runs on its own clock
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
