@@ -134,24 +134,16 @@ const numCmp = (key, desc) => (a, b) => {
   return desc ? y - x : x - y;
 };
 const textCmp = (key) => (a, b) => String((a.attrs && a.attrs[key]) || '').localeCompare(String((b.attrs && b.attrs[key]) || ''), undefined, { sensitivity: 'base' });
-// scriptOf guesses the language of a name from its alphabet (the providers carry no language for albums)
-const SCRIPTS = [['Cyrillic', /[\u0400-\u04ff]/g], ['Greek', /[\u0370-\u03ff]/g], ['Arabic', /[\u0600-\u06ff]/g], ['Hebrew', /[\u0590-\u05ff]/g],
-  ['Japanese', /[\u3040-\u30ff]/g], ['Korean', /[\uac00-\ud7af]/g], ['Chinese', /[\u4e00-\u9fff]/g], ['Latin', /[A-Za-z\u00c0-\u024f]/g]];
-function scriptOf(text) {
-  let best = '', n = 0;
-  for (const [name, re] of SCRIPTS) { const c = (String(text || '').match(re) || []).length; if (c > n) { best = name; n = c; } }
-  return best;
-}
 const attrFacet = (id, label) => ({ id, label, get: (o) => [o.attrs && o.attrs[id]] });
 const SORT_NAME = { id: 'name', label: 'Name', cmp: nameCmp };
 const LIST_VIEWS = {
-  // loadAll: these lists are small enough to load completely, so the drop-downs list every artist, genre and language
+  // loadAll: these lists are small enough to load completely, so the drop-downs list every artist and genre
   albums: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'artist', label: 'Artist', cmp: (a, b) => textCmp('artist')(a, b) || nameCmp(a, b) },
     { id: 'new', label: 'Release year, newest', cmp: numCmp('year', true) }, { id: 'old', label: 'Release year, oldest', cmp: numCmp('year', false) },
     { id: 'tracks', label: 'Most tracks', cmp: numCmp('tracks', true) }],
-    facets: [attrFacet('artist', 'Artist'), attrFacet('genre', 'Genre'), attrFacet('decade', 'Decade'), attrFacet('folder', 'Folder'), attrFacet('language', 'Alphabet')] },
-  artists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'albums', label: 'Most albums', cmp: numCmp('albums', true) }], facets: [attrFacet('folder', 'Folder'), attrFacet('language', 'Alphabet')] },
-  playlists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'tracks', label: 'Most tracks', cmp: numCmp('tracks', true) }], facets: [attrFacet('section', 'Section'), attrFacet('language', 'Alphabet')] },
+    facets: [attrFacet('artist', 'Artist'), attrFacet('genre', 'Genre'), attrFacet('decade', 'Decade'), attrFacet('folder', 'Folder')] },
+  artists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'albums', label: 'Most albums', cmp: numCmp('albums', true) }], facets: [attrFacet('folder', 'Folder')] },
+  playlists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'tracks', label: 'Most tracks', cmp: numCmp('tracks', true) }], facets: [attrFacet('section', 'Section')] },
   'artist-albums': { search: true, loadAll: true, sorts: [{ id: 'new', label: 'Newest first', cmp: numCmp('year', true) }, { id: 'old', label: 'Oldest first', cmp: numCmp('year', false) }, SORT_NAME] },
   catalog: { search: true, sorts: [SORT_NAME] },
   favorites: { search: true, sorts: [SORT_NAME] },
@@ -432,7 +424,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, LIST_VIEWS, ALBUM_ORDERS, scriptOf, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, stationArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, LIST_VIEWS, ALBUM_ORDERS, nameCmp, numCmp, radioNow, streamInfo, stationSub, facetValues, viewRows, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -1689,7 +1681,6 @@ if (typeof document !== 'undefined') (function () {
       const hh = heartBtn({ key: favKey(k, prov, row.id), req: { kind: k, provider: prov, id: row.id, title: name, subtitle: k === 'artist' ? '' : (row.artist || '') } });
       const attrs = { artist: row.artist || '', genre: row.genre || '', year: Number(row.year) || 0, decade: row.year ? Math.floor(row.year / 10) * 10 + 's' : '',
         tracks: Number(row.track_count) || 0, albums: Number(row.album_count) || 0, section: row.section || '',
-        language: scriptOf(name + ' ' + (row.artist || '')),
         folder: folderOf(k === 'artist' ? name : row.artist, name) };
       return { title: name, sub, end, href, tkind, attrs, art: itemArtUrl(k, prov, row.id), heart: hh, more: collectionMore(k, prov, row.id, hh),
         onPlay: k === 'album' ? () => enq({ kind: 'album', provider: prov, id: row.id, mode: 'play' }) : null };
