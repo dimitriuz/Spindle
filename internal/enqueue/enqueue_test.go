@@ -1,6 +1,7 @@
 package enqueue
 
 import (
+	"cliamp-web/internal/files"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,8 @@ type fakeCliamp struct {
 	startPolls          int
 	polls               int
 	playRequested       bool
-	queuedBeforePlaying int // track.queue calls that arrived while it was not playing
+	queuedBeforePlaying int // queue/track.queue calls that arrived while it was not playing
+	rows                int // live playlist length, for the local-file ops
 }
 
 func trk(title, path string) map[string]any {
@@ -54,7 +56,7 @@ func (f *fakeCliamp) Call(_ context.Context, method string, _ any) (*ipc.Respons
 			state = "playing"
 		}
 	}
-	return &ipc.Response{OK: true, Snapshot: json.RawMessage(`{"state":"` + state + `"}`)}, nil
+	return &ipc.Response{OK: true, Snapshot: json.RawMessage(fmt.Sprintf(`{"state":%q,"total":%d}`, state, f.rows))}, nil
 }
 
 func (f *fakeCliamp) playing() bool { return f.playRequested && f.polls > f.startPolls }
@@ -107,8 +109,19 @@ func (f *fakeCliamp) SubmitJob(ctx context.Context, op string, params any) (*ipc
 		}
 		return page(rows, p, "albums")
 	case "queue.clear":
-		f.playRequested, f.polls = false, 0
+		f.playRequested, f.polls, f.rows = false, 0, 0
 		f.calls = append(f.calls, "clear")
+	case "queue":
+		if f.playRequested && !f.playing() {
+			f.queuedBeforePlaying++
+		}
+		f.rows++
+		f.calls = append(f.calls, "queue:"+p["path"].(string))
+	case "queue.enqueue":
+		f.calls = append(f.calls, fmt.Sprintf("enq:%d", intOf(p["index"])))
+	case "queue.play":
+		f.playRequested = true
+		f.calls = append(f.calls, fmt.Sprintf("play@%d", intOf(p["index"])))
 	case "track.queue":
 		f.queueN++
 		if f.failAt > 0 && f.queueN == f.failAt {
@@ -454,5 +467,188 @@ func TestCancelWhileWaitingForPlayback(t *testing.T) {
 	s.Wait()
 	if l := ev.last(); l.State != "cancelled" {
 		t.Fatalf("%+v", l)
+	}
+}
+
+// ---- local files and folders ----
+
+type fakeFiles struct {
+	paths   map[string][]string // rel -> absolute audio paths (a file maps to itself)
+	dirs    map[string]bool
+	err     map[string]error
+	walkErr error
+}
+
+func (f *fakeFiles) Resolve(rel string) (string, bool, error) {
+	if err := f.err[rel]; err != nil {
+		return "", false, err
+	}
+	if _, ok := f.paths[rel]; !ok {
+		return "", false, files.ErrNotFound
+	}
+	return "/music/" + rel, f.dirs[rel], nil
+}
+
+func (f *fakeFiles) Walk(_ context.Context, rel string) ([]string, error) {
+	if f.walkErr != nil {
+		return nil, f.walkErr
+	}
+	return f.paths[rel], nil
+}
+
+func localSvc(f *fakeCliamp, ff *fakeFiles) (*Service, *events, *time.Time) {
+	s, ev, now := newSvc(f, nil)
+	s.SetFiles(ff)
+	s.pollEvery, s.playTimeout = time.Millisecond, 2*time.Second
+	return s, ev, now
+}
+
+func album(n int) (rel string, ff *fakeFiles) {
+	var ps []string
+	for i := 0; i < n; i++ {
+		ps = append(ps, fmt.Sprintf("/music/A/%02d.flac", i+1))
+	}
+	return "A", &fakeFiles{paths: map[string][]string{"A": ps, "A/01.flac": {"/music/A/01.flac"}, "empty": nil, "X": ps}, dirs: map[string]bool{"A": true, "empty": true, "X": true}}
+}
+
+func TestFileAddQueuesThenEnqueuesTheNewRow(t *testing.T) {
+	f := &fakeCliamp{rows: 5}
+	_, ff := album(3)
+	s, ev, _ := localSvc(f, ff)
+	run(t, s, Request{Kind: "file", Provider: "files", ID: "A/01.flac", Mode: "append"})
+	if got := strings.Join(f.snapshot(), " "); got != "queue:/music/A/01.flac enq:5" {
+		t.Fatalf("got %s", got)
+	}
+	if l := ev.last(); l.State != "done" || l.Done != 1 || l.Total != 1 {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func TestFolderAddKeepsOrderAndEnqueuesEachRowByItsIndex(t *testing.T) {
+	f := &fakeCliamp{rows: 5}
+	rel, ff := album(40)
+	s, ev, _ := localSvc(f, ff)
+	run(t, s, Request{Kind: "folder", Provider: "files", ID: rel, Mode: "append"})
+	calls := f.snapshot()
+	if len(calls) != 80 {
+		t.Fatalf("%d calls", len(calls))
+	}
+	for k := 0; k < 40; k++ {
+		if calls[2*k] != fmt.Sprintf("queue:/music/A/%02d.flac", k+1) || calls[2*k+1] != fmt.Sprintf("enq:%d", 5+k) {
+			t.Fatalf("at %d: %s %s", k, calls[2*k], calls[2*k+1])
+		}
+	}
+	if l := ev.last(); l.State != "done" || l.Done != 40 || l.Total != 40 {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func TestFolderPlayClearsPlaysFirstThenQueuesTheRest(t *testing.T) {
+	f := &fakeCliamp{rows: 9, startPolls: 6}
+	rel, ff := album(5)
+	s, ev, _ := localSvc(f, ff)
+	run(t, s, Request{Kind: "folder", Provider: "files", ID: rel, Mode: "play"})
+	calls := f.snapshot()
+	want := "clear queue:/music/A/01.flac play@0 queue:/music/A/02.flac queue:/music/A/03.flac queue:/music/A/04.flac queue:/music/A/05.flac"
+	if strings.Join(calls, " ") != want {
+		t.Fatalf("got %s want %s", strings.Join(calls, " "), want)
+	}
+	if f.queuedBeforePlaying != 0 {
+		t.Fatalf("%d rows were queued while the first was still starting", f.queuedBeforePlaying)
+	}
+	if l := ev.last(); l.State != "done" || l.Done != 5 || l.Total != 5 {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func TestFilePlayIsClearQueuePlay(t *testing.T) {
+	f := &fakeCliamp{rows: 3}
+	_, ff := album(2)
+	s, _, _ := localSvc(f, ff)
+	run(t, s, Request{Kind: "file", Provider: "files", ID: "A/01.flac", Mode: "play"})
+	if got := strings.Join(f.snapshot(), " "); got != "clear queue:/music/A/01.flac play@0" {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestEmptyFolderFinishesDoneZeroAndKeepsTheQueue(t *testing.T) {
+	f := &fakeCliamp{rows: 3}
+	_, ff := album(1)
+	s, ev, _ := localSvc(f, ff)
+	run(t, s, Request{Kind: "folder", Provider: "files", ID: "empty", Mode: "play"})
+	if len(f.snapshot()) != 0 {
+		t.Fatalf("an empty folder must not clear the queue: %v", f.snapshot())
+	}
+	if l := ev.last(); l.State != "done" || l.Total != 0 {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func TestOutsideAndMissingPathsAreRefusedWithoutCalls(t *testing.T) {
+	f := &fakeCliamp{}
+	_, ff := album(1)
+	ff.err = map[string]error{"../x": files.ErrOutside}
+	s, _, _ := localSvc(f, ff)
+	if err := s.Start(Request{Kind: "folder", Provider: "files", ID: "../x", Mode: "append"}); !errors.Is(err, ErrUntrusted) {
+		t.Fatalf("want ErrUntrusted, got %v", err)
+	}
+	if err := s.Start(Request{Kind: "folder", Provider: "files", ID: "nope", Mode: "append"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("want ErrInvalid, got %v", err)
+	}
+	if len(f.snapshot()) != 0 {
+		t.Fatalf("no cliamp call may happen: %v", f.snapshot())
+	}
+}
+
+func TestKindMustMatchWhatThePathIs(t *testing.T) {
+	_, ff := album(1)
+	s, _, _ := localSvc(&fakeCliamp{}, ff)
+	if err := s.Start(Request{Kind: "file", Provider: "files", ID: "A", Mode: "append"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a folder is not a file: %v", err)
+	}
+	if err := s.Start(Request{Kind: "folder", Provider: "files", ID: "A/01.flac", Mode: "append"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a file is not a folder: %v", err)
+	}
+}
+
+func TestWalkErrorEndsFailedAndFreesTheService(t *testing.T) {
+	f := &fakeCliamp{}
+	rel, ff := album(3)
+	ff.walkErr = errors.New("nfs: stale file handle")
+	s, ev, _ := localSvc(f, ff)
+	run(t, s, Request{Kind: "folder", Provider: "files", ID: rel, Mode: "append"})
+	if l := ev.last(); l.State != "failed" {
+		t.Fatalf("%+v", l)
+	}
+	ff.walkErr = nil
+	run(t, s, Request{Kind: "folder", Provider: "files", ID: rel, Mode: "append"}) // not stuck busy
+	if l := ev.last(); l.State != "done" || l.Done != 3 {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func TestCancelStopsAFolderAdd(t *testing.T) {
+	f := &fakeCliamp{}
+	rel, ff := album(300)
+	ev := &events{}
+	now := time.Unix(1000, 0)
+	var s *Service
+	s = New(f, nil, nil, func(e Event) {
+		ev.emit(e)
+		if e.Done >= 10 && e.State == "running" {
+			s.Cancel()
+		}
+	}, func() time.Time { now = now.Add(time.Second); return now })
+	s.SetFiles(ff)
+	run(t, s, Request{Kind: "folder", Provider: "files", ID: rel, Mode: "append"})
+	if l := ev.last(); l.State != "cancelled" || l.Done < 10 || l.Done >= 300 {
+		t.Fatalf("%+v", l)
+	}
+}
+
+func TestFileKindsNeedAFilesService(t *testing.T) {
+	s, _, _ := newSvc(&fakeCliamp{}, nil)
+	if err := s.Start(Request{Kind: "folder", Provider: "files", ID: "A", Mode: "play"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("%v", err)
 	}
 }

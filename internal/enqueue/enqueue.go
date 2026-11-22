@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"cliamp-web/internal/cliamp"
+	"cliamp-web/internal/files"
 	"cliamp-web/internal/ipc"
 )
 
@@ -29,11 +30,19 @@ var (
 	ErrUntrusted = errors.New("enqueue: unknown track path")
 )
 
-// Request is one menu action. Kind: track|album|playlist|artist. Mode: play
-// (clear the queue, add, start playing) or append (add to the end).
+// Request is one menu action. Kind: track|album|playlist|artist, or file|folder
+// for the music folder (Provider "files", ID the path relative to its root).
+// Mode: play (clear the queue, add, start playing) or append (add to the end).
 type Request struct {
 	Kind, Provider, ID, Mode string
 	Track                    map[string]any
+	abs                      string // file/folder: the resolved absolute path
+}
+
+// Files is the music folder the file kinds read from (*files.Browser).
+type Files interface {
+	Resolve(rel string) (abs string, dir bool, err error)
+	Walk(ctx context.Context, rel string) ([]string, error)
 }
 
 // Event reports progress. State: running|done|failed|cancelled.
@@ -50,6 +59,7 @@ type Service struct {
 	r       ipc.OpRunner
 	restore func(string) string
 	known   func(string) bool
+	files   Files
 	emit    func(Event)
 	now     func() time.Time
 
@@ -75,6 +85,9 @@ func New(r ipc.OpRunner, restore func(string) string, known func(string) bool, e
 	}
 	return &Service{r: r, restore: restore, known: known, emit: emit, now: now, pollEvery: 50 * time.Millisecond, playTimeout: 15 * time.Second}
 }
+
+// SetFiles enables the file and folder kinds.
+func (s *Service) SetFiles(f Files) { s.files = f }
 
 // Start validates the request and runs it in the background.
 func (s *Service) Start(req Request) error {
@@ -107,6 +120,20 @@ func (s *Service) Start(req Request) error {
 		if req.Provider == "" || req.ID == "" {
 			return ErrInvalid
 		}
+	case "file", "folder":
+		if s.files == nil {
+			return ErrInvalid
+		}
+		abs, dir, err := s.files.Resolve(req.ID)
+		switch {
+		case errors.Is(err, files.ErrOutside):
+			return ErrUntrusted
+		case err != nil:
+			return ErrInvalid
+		case dir != (req.Kind == "folder"):
+			return ErrInvalid // a folder is not a file and the other way round
+		}
+		req.abs = abs
 	default:
 		return ErrInvalid
 	}
@@ -230,6 +257,11 @@ func (s *Service) work(ctx context.Context, req Request) {
 		return
 	}
 
+	if req.Kind == "file" || req.Kind == "folder" {
+		s.workFiles(ctx, req, op)
+		return
+	}
+
 	// everything else walks a track list: append for album/playlist/artist, and Play for an artist
 	tracks, err := s.listTracks(ctx, req)
 	if err != nil {
@@ -337,4 +369,78 @@ func (s *Service) waitPlaying(ctx context.Context) {
 		case <-time.After(s.pollEvery):
 		}
 	}
+}
+
+// workFiles adds local files. cliamp reads their tags itself when given a
+// path (queue{path}), so unlike a Navidrome URL the entry is complete. To keep
+// Add to queue in the same up-next list as every other source, each appended
+// row is then moved there with queue.enqueue, by its live index.
+func (s *Service) workFiles(ctx context.Context, req Request, op func(string, map[string]any) error) {
+	var paths []string
+	if req.Kind == "file" {
+		paths = []string{req.abs}
+	} else {
+		var err error
+		if paths, err = s.files.Walk(ctx, req.ID); err != nil {
+			s.emit(Event{State: "failed", Error: safeError(err)})
+			return
+		}
+	}
+	total, done := len(paths), 0
+	finish := func(err error) {
+		if err == nil {
+			s.emit(Event{State: "done", Done: done, Total: total})
+			return
+		}
+		if ctx.Err() != nil {
+			s.emit(Event{State: "cancelled", Done: done, Total: total})
+			return
+		}
+		s.emit(Event{State: "failed", Done: done, Total: total, Error: safeError(err)})
+	}
+	if total == 0 {
+		finish(nil) // nothing to add: leave the queue alone
+		return
+	}
+	s.progress("running", 0, total, true)
+	rest := paths
+	base := 0
+	if req.Mode == "play" {
+		for _, step := range []struct {
+			name   string
+			params map[string]any
+		}{{"queue.clear", map[string]any{}}, {"queue", map[string]any{"path": paths[0]}}, {"queue.play", map[string]any{"index": 0}}} {
+			if err := op(step.name, step.params); err != nil {
+				finish(err)
+				return
+			}
+		}
+		done, rest = 1, paths[1:]
+		s.waitPlaying(ctx) // see the artist case: queuing while the stream starts moves the cursor
+	} else if resp, err := s.r.Call(ctx, "state.get", nil); err == nil {
+		var sn struct {
+			Total int `json:"total"`
+		}
+		_ = json.Unmarshal(resp.Snapshot, &sn)
+		base = sn.Total // the queue's length: the first row we add gets this index
+	}
+	for k, p := range rest {
+		if ctx.Err() != nil {
+			finish(ctx.Err())
+			return
+		}
+		if err := op("queue", map[string]any{"path": p}); err != nil {
+			finish(err)
+			return
+		}
+		if req.Mode == "append" {
+			if err := op("queue.enqueue", map[string]any{"index": base + k}); err != nil {
+				finish(err)
+				return
+			}
+		}
+		done++
+		s.progress("running", done, total, false)
+	}
+	finish(nil)
 }
