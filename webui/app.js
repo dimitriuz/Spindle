@@ -677,7 +677,8 @@ if (typeof document !== 'undefined') (function () {
     art.albumKey = key;
     art.idx = idx;
     art.discPending = art.disc && plan.needDisc; // the disc on show is about to be replaced: do not start it
-    loadImg(artUrl('artist', p), seq, (u) => { $('artist-img').src = u; $('artist-img').hidden = false; }, () => { $('artist-img').hidden = true; });
+    if (/^https?:/.test(p) && !/\/rest\/stream/.test(p)) $('artist-img').hidden = true; // a station has no artist photo
+    else loadImg(artUrl('artist', p), seq, (u) => { $('artist-img').src = u; $('artist-img').hidden = false; }, () => { $('artist-img').hidden = true; });
     if (plan.needCover && !art.coverOk) {
       // nothing on show to animate away: the cover appears as soon as it is loaded
       plan.needCover = false;
@@ -1058,7 +1059,10 @@ if (typeof document !== 'undefined') (function () {
     const all = [];
     let done = false, busy = false, failed = false, filling = false, dead = false, io = null;
     const els = new Map();
-    const make = (o) => { const el = mode === 'tiles' ? tile(o) : item(o); els.set(o, el); return el; };
+    // built rows are kept, so redrawing after a filter or a late detail does not reload pictures (that was the blinking)
+    const make = (o) => { let el = els.get(o); if (!el) { el = mode === 'tiles' ? tile(o) : item(o); els.set(o, el); } return el; };
+    let paintTimer = 0;
+    const repaint = () => { if (!paintTimer) paintTimer = setTimeout(() => { paintTimer = 0; if (!dead) paint(); }, 150); };
     // sort, facet filters and "hide offline" apply to what is loaded so far
     const view = { sort: '', facets: {}, hideDead: true };
     const narrowed = () => !!view.sort || Object.values(view.facets).some(Boolean);
@@ -1074,7 +1078,7 @@ if (typeof document !== 'undefined') (function () {
         const rows = r.rows || [];
         if (rows.length) {
           const os = rows.map(c.opts); all.push(...os);
-          if (narrowed()) paint(); else ul.append(...os.filter((o) => !(view.hideDead && o.dead)).map(make));
+          if (narrowed()) repaint(); else ul.append(...os.filter((o) => !(view.hideDead && o.dead)).map(make));
           buildTools(); enrich(os);
         }
         if (!rows.length || r.done) done = true;
@@ -1089,8 +1093,10 @@ if (typeof document !== 'undefined') (function () {
       if (!c.enrich) return;
       try { await c.enrich(os); } catch (e) { /* the rows stay as they are */ }
       if (dead || c.my !== nav) return;
-      if (narrowed() || (view.hideDead && os.some((o) => o.dead))) paint();
-      else os.forEach((o) => { const el = els.get(o); if (el && el.isConnected) el.replaceWith(make(o)); });
+      const old = os.map((o) => els.get(o));
+      os.forEach((o) => els.delete(o)); // their details changed: build them again
+      if (narrowed() || (view.hideDead && os.some((o) => o.dead))) repaint();
+      else os.forEach((o, i) => { if (old[i] && old[i].isConnected) old[i].replaceWith(make(o)); });
       buildTools();
     }
     async function fill() {
@@ -1106,6 +1112,7 @@ if (typeof document !== 'undefined') (function () {
       if (m === mode) return;
       const first = Array.from(ul.children).findIndex((li) => li.getBoundingClientRect().bottom > 60); // stay on the same entry
       mode = m;
+      els.clear();
       saveViewMode(c.key, m);
       paint();
       if (first > 0 && ul.children[first]) ul.children[first].scrollIntoView({ block: 'start' });
@@ -1119,8 +1126,12 @@ if (typeof document !== 'undefined') (function () {
     };
     const toggle = c.modes ? h('div', { class: 'vtoggle', role: 'group', 'aria-label': 'View' }, vbtn('list', 'queue', 'List view'), vbtn('tiles', 'grid', 'Tile view')) : null;
     const tools = c.sorts || c.facets ? h('div', { class: 'viewtools' }) : null;
+    let toolsLate = false, toolsSig = '';
     function buildTools() {
       if (!tools) return;
+      // never rebuild a menu the user has open: it would close under their finger
+      if (tools.contains(document.activeElement) && document.activeElement !== tools) { toolsLate = true; return; }
+      toolsLate = false;
       const kids = [];
       const pick = (label, value, opts, onchange) => {
         const sel = h('select', { class: 'vsel', 'aria-label': label, onchange: () => onchange(sel.value) },
@@ -1139,9 +1150,13 @@ if (typeof document !== 'undefined') (function () {
         cb.checked = view.hideDead;
         kids.push(h('label', { class: 'vchk' }, cb, ' Hide offline'));
       }
+      const sig = kids.map((k) => k.outerHTML).join('') + JSON.stringify([view.sort, view.facets, view.hideDead]);
+      if (sig === toolsSig) return; // nothing changed: keep the controls as they are
+      toolsSig = sig;
       tools.replaceChildren(...kids);
       tools.hidden = !kids.length;
     }
+    if (tools) tools.addEventListener('focusout', () => setTimeout(() => { if (toolsLate && !dead) buildTools(); }, 0));
     buildTools();
     ul.className = mode === 'tiles' ? 'grid' : 'list';
     return {
@@ -1520,10 +1535,17 @@ if (typeof document !== 'undefined') (function () {
     // a plain kind list, as a list or tiles, loaded as you scroll
     let off = 0;
     const radio = prov === 'radio' && kind === 'catalog';
+    const seenIds = new Set();
     const col = collection({ my, key: viewModeKey('browse', prov, kind), modes: true, empty: 'Nothing here',
       page: async () => {
-        const r = await api.get(listUrl(prov, kind, off));
-        const rows = r[kind] || r.playlists || [];
+        const r = await api.get(listUrl(prov, kind, radio ? seenIds.size : off));
+        let rows = r[kind] || r.playlists || [];
+        if (radio) {
+          // cliamp's station list ignores the offset and answers with everything it has loaded so far, a bit more each time
+          const fresh = rows.filter((x) => !seenIds.has(x.id));
+          fresh.forEach((x) => seenIds.add(x.id));
+          return { rows: fresh, done: !fresh.length };
+        }
         off += rows.length;
         return { rows, done: pageDone(rows.length) };
       },
@@ -1569,13 +1591,16 @@ if (typeof document !== 'undefined') (function () {
         { id: 'lang', label: 'Language', get: (o) => [o.meta && o.meta.language] },
       ],
       enrich: hasMeta ? null : async (os) => {
-        const names = os.filter((o) => o.station).map((o) => o.title);
-        if (!names.length) return;
-        const r = await api.post('/api/radio/meta', { names });
-        const by = new Map((r.stations || []).map((m) => [m.name, m]));
-        for (const o of os) {
-          const m = o.station && by.get(o.title);
-          if (m && m.found) { o.meta = m; o.sub = stationSub(m) || o.sub; o.dead = !m.online; }
+        const st = os.filter((o) => o.station).slice(0, 240);
+        for (let i = 0; i < st.length; i += 60) {
+          const chunk = st.slice(i, i + 60);
+          const r = await api.post('/api/radio/meta', { names: chunk.map((o) => o.title) });
+          const by = new Map((r.stations || []).map((m) => [m.name, m]));
+          for (const o of chunk) {
+            const m = by.get(o.title);
+            // a logo is asked for only when the directory has one: no 404s for the rest
+            if (m && m.found) { o.meta = m; o.sub = stationSub(m) || o.sub; o.dead = !m.online; if (m.logo) o.art = stationArtUrl(o.title); }
+          }
         }
       },
     };
@@ -1584,7 +1609,7 @@ if (typeof document !== 'undefined') (function () {
   function stationHitOpts(hit) {
     const hh = heartBtn({ req: { kind: 'radio', provider: 'radio', id: 'f:' + hit.url, title: hit.name } });
     const play = () => playTrack({ title: hit.name, path: hit.url, stream: true, genre: (hit.tags || []).join(',') });
-    return { title: hit.name, sub: stationSub(hit) || (hit.tags || []).join(', '), tkind: 'radio', art: '/api/art/station?id=' + enc(hit.id),
+    return { title: hit.name, sub: stationSub(hit) || (hit.tags || []).join(', '), tkind: 'radio', art: hit.logo ? '/api/art/station?id=' + enc(hit.id) : '',
       meta: hit, dead: !hit.online, heart: hh, onTap: play,
       more: () => ({ spec: { kind: 'radio', fav: favState(hh) }, run: { play, fav: () => hh.toggle() } }) };
   }
@@ -1608,7 +1633,7 @@ if (typeof document !== 'undefined') (function () {
     }
     // radio catalog: stations have no path; tap plays via provider.load
     const hh = row.favoritable ? heartBtn({ on: !!row.favorite || /^★ /.test(row.name || ''), req: { kind: 'radio', provider: prov, id: row.id } }) : null;
-    return { title: name, sub: row.genre || '', tkind: 'radio', station: !!row.favoritable, art: row.favoritable ? stationArtUrl(name) : '', heart: hh, more: radioMore(prov, row.id, hh),
+    return { title: name, sub: row.genre || '', tkind: 'radio', station: !!row.favoritable, heart: hh, more: radioMore(prov, row.id, hh),
       onTap: () => { cmd('provider.load', { provider: prov, playlist: row.id }, true); rev(); } };
   }
   // ---- Files: the music folder cliamp's own file browser starts in ----

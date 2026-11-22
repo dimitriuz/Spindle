@@ -57,6 +57,7 @@ type StationMeta struct {
 	Clicks   int      `json:"clicks,omitempty"`
 	Online   bool     `json:"online"` // the directory's last check of the stream passed
 	Homepage string   `json:"homepage,omitempty"`
+	Logo     bool     `json:"logo,omitempty"` // the directory has a picture for it
 }
 
 func metaOf(name string, rec stationRec, ok bool) StationMeta {
@@ -66,6 +67,7 @@ func metaOf(name string, rec stationRec, ok bool) StationMeta {
 	}
 	m.Codec, m.Bitrate, m.Country, m.Language = strings.ToUpper(rec.Codec), rec.Bitrate, rec.Country, strings.Title(rec.Lang) //nolint:staticcheck
 	m.Votes, m.Clicks, m.Online = rec.Votes, rec.Clicks, rec.Check == 1
+	m.Logo = strings.HasPrefix(rec.Favicon, "http")
 	if strings.HasPrefix(rec.Home, "http") {
 		m.Homepage = rec.Home
 	}
