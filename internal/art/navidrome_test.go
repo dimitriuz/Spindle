@@ -23,7 +23,7 @@ func newFakeND(t *testing.T) *fakeND {
 	mux.HandleFunc("/rest/getSong", func(w http.ResponseWriter, r *http.Request) {
 		f.songCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"subsonic-response":{"status":"ok","song":{"id":"S1","albumId":"A1","artistId":"R1"}}}`))
+		w.Write([]byte(`{"subsonic-response":{"status":"ok","song":{"id":"S1","albumId":"A1","artistId":"R1","suffix":"flac","bitRate":1161,"bitDepth":24,"samplingRate":44100,"channelCount":2}}}`))
 	})
 	mux.HandleFunc("/rest/getCoverArt", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")

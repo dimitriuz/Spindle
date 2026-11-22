@@ -365,3 +365,52 @@ func TestRunServesArtForLocalTrack(t *testing.T) {
 		t.Fatalf("unknown track: %d", r2.StatusCode)
 	}
 }
+
+func TestRunServesTrackInfoForLocalFLAC(t *testing.T) {
+	music := t.TempDir()
+	track := filepath.Join(music, "01.flac")
+	// "fLaC" + STREAMINFO block header + 34 bytes: 96 kHz, 2 ch, 24 bit
+	hdr := append([]byte("fLaC\x80\x00\x00\x22"), make([]byte, 34)...)
+	v := uint64(96000)<<44 | uint64(1)<<41 | uint64(23)<<36
+	for i := 0; i < 8; i++ {
+		hdr[8+10+i] = byte(v >> (56 - 8*uint(i)))
+	}
+	if err := os.WriteFile(track, hdr, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := fakeplayer.Start(t.TempDir(), fakeplayer.Options{
+		State: `{"state":"playing","revision":5,"playlist_revision":7}`,
+		Track: `{"title":"Local","path":"` + track + `"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	port := freePort(t)
+	go func() { _ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
+	readStatus(t, dir)
+	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, err := testHTTP.Get(base + "/api/trackinfo?path=" + url.QueryEscape(track))
+		if err == nil && resp.StatusCode == 200 {
+			var got map[string]any
+			_ = json.NewDecoder(resp.Body).Decode(&got)
+			resp.Body.Close()
+			if got["format"] != "FLAC" || got["sample_rate"] != float64(96000) || got["bit_depth"] != float64(24) {
+				t.Fatalf("info: %v", got)
+			}
+			return
+		}
+		if err == nil {
+			resp.Body.Close()
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("never served: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

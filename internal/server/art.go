@@ -13,6 +13,11 @@ type ArtSource interface {
 	Get(ctx context.Context, kind art.Kind, trackPath string) (*art.Image, error)
 }
 
+// InfoSource reports a track's technical details; *art.Resolver is the real one.
+type InfoSource interface {
+	Info(ctx context.Context, trackPath string, durationSecs float64) (art.Info, error)
+}
+
 // RestoreURL gives art lookups the original stream URL for a scrubbed one.
 func RestoreURL(scrubbed string) string { return urls.Restore(scrubbed) }
 
@@ -46,4 +51,29 @@ func (s *serverState) art(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", img.ContentType)
 	h.Set("Content-Length", strconv.Itoa(len(img.Data)))
 	_, _ = w.Write(img.Data)
+}
+
+// trackInfo serves GET /api/trackinfo?path=&duration=: codec, bitrate and so
+// on for the fullscreen player. Failures are one quiet 404, like art.
+func (s *serverState) trackInfo(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
+	if s.cfg.Info == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_info"})
+		return
+	}
+	dur, err := strconv.ParseFloat(r.URL.Query().Get("duration"), 64)
+	if err != nil || dur < 0 {
+		dur = 0
+	}
+	info, err := s.cfg.Info.Info(r.Context(), path, dur)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_info"})
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	writeJSON(w, http.StatusOK, info)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"testing"
 )
@@ -87,3 +88,5 @@ func TestStreamURLOfAnUnknownHostIsRefusedWithoutAnyRequest(t *testing.T) {
 		t.Fatal("the bridge must not contact a host it was not told about")
 	}
 }
+
+func http_default() *http.Client { return http.DefaultClient }

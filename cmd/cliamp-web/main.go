@@ -155,17 +155,18 @@ func run(ctx context.Context, rc runConfig) error {
 	go sub.Run(ctx)
 
 	var artSrc server.ArtSource
+	var infoSrc server.InfoSource
 	if res, err := art.NewResolver(art.Options{
 		Dir: filepath.Join(rc.DataDir, "art"), MaxBytes: artCacheBytes,
 		Known: cache.HasTrack, Restore: server.RestoreURL,
 	}); err != nil {
 		logger.Warn("artwork disabled", "err", err)
 	} else {
-		artSrc = res
+		artSrc, infoSrc = res, res
 	}
 
 	h := server.New(server.Config{
-		Cache: cache, Runner: conn, Hub: hub, Art: artSrc,
+		Cache: cache, Runner: conn, Hub: hub, Art: artSrc, Info: infoSrc,
 		Guard:   server.NewHostGuard(rc.AllowedHosts),
 		Limiter: server.NewLimiter(20, 40, time.Now), UI: webui.FS(), Logger: logger,
 	})

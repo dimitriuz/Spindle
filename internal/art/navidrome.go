@@ -50,10 +50,15 @@ type Navidrome struct {
 	HTTP *http.Client
 
 	mu    sync.Mutex
-	songs map[string]songIDs
+	songs map[string]songMeta
 }
 
-type songIDs struct{ album, artist string }
+// songMeta is what one getSong call tells us; art needs the ids, the info
+// route needs the technical fields.
+type songMeta struct {
+	album, artist string
+	info          Info
+}
 
 const maxSongs = 4096
 
@@ -104,7 +109,7 @@ func (n *Navidrome) get(ctx context.Context, rawURL string) (*http.Response, err
 }
 
 // lookup resolves a song id to its album and artist ids (cached).
-func (n *Navidrome) lookup(ctx context.Context, base, songID string, auth url.Values) (songIDs, error) {
+func (n *Navidrome) lookup(ctx context.Context, base, songID string, auth url.Values) (songMeta, error) {
 	ck := base + "|" + songID
 	n.mu.Lock()
 	if ids, ok := n.songs[ck]; ok {
@@ -114,28 +119,37 @@ func (n *Navidrome) lookup(ctx context.Context, base, songID string, auth url.Va
 	n.mu.Unlock()
 	resp, err := n.get(ctx, n.endpoint(base, "getSong", auth, url.Values{"id": {songID}, "f": {"json"}}))
 	if err != nil {
-		return songIDs{}, err
+		return songMeta{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 500 {
-		return songIDs{}, fmt.Errorf("art: getSong: http %d", resp.StatusCode)
+		return songMeta{}, fmt.Errorf("art: getSong: http %d", resp.StatusCode)
 	}
 	var body struct {
 		R struct {
 			Status string `json:"status"`
 			Song   struct {
-				AlbumID  string `json:"albumId"`
-				ArtistID string `json:"artistId"`
+				AlbumID      string `json:"albumId"`
+				ArtistID     string `json:"artistId"`
+				Suffix       string `json:"suffix"`
+				BitRate      int    `json:"bitRate"`
+				BitDepth     int    `json:"bitDepth"`
+				SamplingRate int    `json:"samplingRate"`
+				ChannelCount int    `json:"channelCount"`
 			} `json:"song"`
 		} `json:"subsonic-response"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil || body.R.Status != "ok" {
-		return songIDs{}, ErrNoArt
+		return songMeta{}, ErrNoArt
 	}
-	ids := songIDs{album: body.R.Song.AlbumID, artist: body.R.Song.ArtistID}
+	sg := body.R.Song
+	ids := songMeta{album: sg.AlbumID, artist: sg.ArtistID, info: Info{
+		Format: strings.ToUpper(sg.Suffix), BitrateKbps: sg.BitRate, BitDepth: sg.BitDepth,
+		SampleRate: sg.SamplingRate, Channels: sg.ChannelCount,
+	}}
 	n.mu.Lock()
 	if n.songs == nil || len(n.songs) >= maxSongs {
-		n.songs = map[string]songIDs{}
+		n.songs = map[string]songMeta{}
 	}
 	n.songs[ck] = ids
 	n.mu.Unlock()
@@ -197,4 +211,23 @@ func (n *Navidrome) Resolve(ctx context.Context, kind Kind, streamURL string) (s
 		}
 		return data, nil
 	}, nil
+}
+
+// Info returns the technical details Navidrome holds for the stream's song.
+func (n *Navidrome) Info(ctx context.Context, streamURL string) (Info, error) {
+	base, songID, auth, ok := parseStream(streamURL)
+	if !ok {
+		return Info{}, ErrNoInfo
+	}
+	m, err := n.lookup(ctx, base, songID, auth)
+	if errors.Is(err, ErrNoArt) {
+		return Info{}, ErrNoInfo
+	}
+	if err != nil {
+		return Info{}, err
+	}
+	if m.info == (Info{}) {
+		return Info{}, ErrNoInfo
+	}
+	return m.info, nil
 }

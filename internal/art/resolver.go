@@ -72,3 +72,17 @@ func (r *Resolver) Get(ctx context.Context, kind Kind, trackPath string) (*Image
 	}
 	return r.cache.Do(key, fetch)
 }
+
+// Info returns technical details for a track, gated exactly like Get.
+func (r *Resolver) Info(ctx context.Context, trackPath string, durationSecs float64) (Info, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	orig := r.restore(trackPath)
+	if orig == trackPath && (r.known == nil || !r.known(trackPath)) {
+		return Info{}, ErrNoInfo
+	}
+	if _, _, _, ok := parseStream(orig); ok {
+		return r.nd.Info(ctx, orig)
+	}
+	return r.local.Info(trackPath, durationSecs)
+}
