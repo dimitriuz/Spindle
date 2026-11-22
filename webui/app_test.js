@@ -217,6 +217,33 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.albumKey(null), '');
   });
 
+  await ok('tile view helpers: keys, placeholders, art urls, chunks', () => {
+    assert.equal(A.viewModeKey('browse', 'navidrome', 'albums'), 'view:browse:navidrome:albums');
+    assert.equal(A.viewModeKey('files'), 'view:files');
+    const a = A.placeholderStyle('Abbey Road'), b = A.placeholderStyle('Abbey Road'), c = A.placeholderStyle('Back in Black');
+    assert.deepEqual(a, b, 'stable for the same name');
+    assert.notDeepEqual(a, c);
+    for (const n of ['', 'x', '日本語', 'a'.repeat(500), null, undefined]) {
+      const p = A.placeholderStyle(n);
+      assert.ok(Number.isInteger(p.hue) && p.hue >= 0 && p.hue < 360, 'hue in range for ' + n);
+      assert.ok(p.sat > 0 && p.light > 0);
+    }
+    assert.equal(A.itemArtUrl('album', 'navidrome', 'al1'), '/api/art/item?provider=navidrome&kind=album&id=al1');
+    assert.equal(A.itemArtUrl('artist', 'navidrome', 'a&b#c'), '/api/art/item?provider=navidrome&kind=artist&id=a%26b%23c');
+    assert.equal(A.itemArtUrl('playlist', 'navidrome', 'p1'), '/api/art/item?provider=navidrome&kind=playlist&id=p1');
+    assert.equal(A.itemArtUrl('album', 'local', 'x'), '', 'only Navidrome has covers by id');
+    assert.equal(A.itemArtUrl('radio', 'navidrome', 'x'), '');
+    assert.equal(A.itemArtUrl('album', 'navidrome', ''), '');
+    assert.equal(A.folderArtUrl('Classic/A B'), '/api/files/art?path=Classic%2FA%20B');
+    assert.equal(A.folderArtUrl('日本/曲#1'), '/api/files/art?path=%E6%97%A5%E6%9C%AC%2F%E6%9B%B2%231');
+    assert.equal(A.nextChunk(10, 0, 4), 4);
+    assert.equal(A.nextChunk(10, 8, 4), 2, 'the last, shorter chunk');
+    assert.equal(A.nextChunk(10, 10, 4), 0);
+    assert.equal(A.nextChunk(10, 12, 4), 0, 'never negative');
+    assert.equal(A.nextChunk(0, 0, 4), 0);
+    assert.equal(A.nextChunk(3, 0, 120), 3);
+  });
+
   await ok('file browser helpers: paths, hashes, parents, filter', () => {
     assert.equal(A.filesRel('', 'Classic'), 'Classic');
     assert.equal(A.filesRel('Classic/Vivaldi', 'Four Seasons 01.flac'), 'Classic/Vivaldi/Four Seasons 01.flac');

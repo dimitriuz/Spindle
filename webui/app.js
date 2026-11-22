@@ -93,6 +93,20 @@ function techLine(info) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// ---- tile view ----
+const viewModeKey = (...parts) => 'view:' + parts.join(':');
+// placeholderStyle gives a tile without a picture its own colour, the same one every time.
+function placeholderStyle(name) {
+  let h = 5381;
+  for (const ch of String(name || '')) h = ((h * 33) ^ ch.codePointAt(0)) >>> 0;
+  return { hue: h % 360, sat: 32, light: 26 };
+}
+const itemArtUrl = (kind, provider, id) => (provider === 'navidrome' && id && ['album', 'artist', 'playlist'].includes(kind)
+  ? '/api/art/item?provider=navidrome&kind=' + kind + '&id=' + encodeURIComponent(id) : '');
+const folderArtUrl = (rel) => '/api/files/art?path=' + encodeURIComponent(rel);
+// nextChunk: how many more rows of an already loaded list to draw
+const nextChunk = (total, shown, size) => Math.max(0, Math.min(size, total - shown));
+
 // ---- file browser ----
 // Paths are relative to the music root; a folder's place is one encoded hash segment.
 const filesRel = (parent, name) => (parent ? parent + '/' + name : name);
@@ -325,7 +339,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, placeholderStyle, itemArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -352,6 +366,10 @@ if (typeof document !== 'undefined') (function () {
     up: 'M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z',
     down: 'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z',
     trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+    grid: 'M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z',
+    radio: 'M3.24 6.15C2.51 6.43 2 7.17 2 8v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V8c0-1.1-.89-2-2-2H8.3l8.26-3.34L15.88 1 3.24 6.15zM7 20c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-8h-2v-2h-2v2H4V8h16v4z',
+    person: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+    album: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z',
     folder: 'M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
     heart: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
     heartfill: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
@@ -848,34 +866,149 @@ if (typeof document !== 'undefined') (function () {
   }
 
   // ---- rows and menus ----
-  function item(o) {
-    const li = h('li', { class: o.cur ? 'cur' : null });
-    const inner = [h('div', { class: 'txt' }, h('div', { class: 't1' }, o.title || ''), o.sub ? h('div', { class: 't2' }, o.sub) : null)];
-    if (o.end) inner.push(h('div', { class: 'end' }, o.end));
-    if (o.icon) inner.unshift(h('span', { class: 'lead' }, o.icon));
-    // every item has the same "..." menu; right-click opens it too
-    let trigger = null;
+  // one "..." button and its menu for any entry, row or tile
+  function moreButton(o) {
+    if (!o.more) return null;
+    const trigger = h('button', { class: 'ic more', 'aria-label': 'More actions', 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
+    trigger.append(svg('more'));
     const open = () => {
       if (menuState && menuState.trigger === trigger) { closeMenu(); return; }
       const m = o.more();
       openMenu({ trigger, title: o.title || '', subtitle: o.sub || '', spec: m.spec, run: m.run });
     };
-    const tap = o.onTap || (o.more ? open : null);
+    trigger.onclick = (e) => { e.preventDefault(); e.stopPropagation(); open(); };
+    return { trigger, open };
+  }
+  // a list row; right-click opens the menu too
+  function item(o) {
+    const li = h('li', { class: o.cur ? 'cur' : null });
+    const inner = [h('div', { class: 'txt' }, h('div', { class: 't1' }, o.title || ''), o.sub ? h('div', { class: 't2' }, o.sub) : null)];
+    if (o.end) inner.push(h('div', { class: 'end' }, o.end));
+    if (o.icon) inner.unshift(h('span', { class: 'lead' }, svg(o.icon)));
+    const mb = moreButton(o);
+    const tap = o.onTap || (mb ? mb.open : null);
     const row = o.href ? h('a', { class: 'row', href: o.href }, inner)
       : h('div', { class: 'row', role: 'button', tabindex: 0, onclick: tap,
         onkeydown: (e) => { if (e.key === 'Enter' && tap) tap(); } }, inner);
     const top = h('div', { class: 'toprow' }, row);
     if (o.heart) top.append(o.heart);
-    if (o.more) {
-      trigger = h('button', { class: 'ic more', 'aria-label': 'More actions', 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
-      trigger.append(svg('more'));
-      trigger.onclick = (e) => { e.preventDefault(); e.stopPropagation(); open(); };
-      row.addEventListener('contextmenu', (e) => { e.preventDefault(); open(); });
-      top.append(trigger);
+    if (mb) {
+      row.addEventListener('contextmenu', (e) => { e.preventDefault(); mb.open(); });
+      top.append(mb.trigger);
     }
     li.append(top);
     return li;
   }
+  // the same entry as a tile: picture (or a coloured placeholder with the kind's icon),
+  // name and subtitle underneath, heart and "..." over the picture's corner
+  function tile(o) {
+    const li = h('li', { class: 'tile2' });
+    const mb = moreButton(o);
+    const ps = placeholderStyle(o.title);
+    const cover = h('div', { class: 'cover2' }, h('span', { class: 'ph2' }, svg(o.tkind || o.icon || 'note')));
+    cover.style.background = 'hsl(' + ps.hue + ' ' + ps.sat + '% ' + ps.light + '%)';
+    if (o.art) {
+      const img = h('img', { class: 'art2', alt: '', loading: 'lazy', decoding: 'async', src: o.art });
+      img.onerror = () => img.remove(); // no picture: the placeholder stays
+      cover.append(img);
+    }
+    const body = [cover, h('div', { class: 'tname' }, o.title || ''), o.sub ? h('div', { class: 'tsub' }, o.sub) : null];
+    const tap = o.onTap || (mb ? mb.open : null);
+    const link = o.href ? h('a', { class: 'tlink', href: o.href }, body)
+      : h('div', { class: 'tlink', role: 'button', tabindex: 0, onclick: tap, onkeydown: (e) => { if (e.key === 'Enter' && tap) tap(); } }, body);
+    li.append(link);
+    const act = h('div', { class: 'tact' });
+    if (o.heart) act.append(o.heart);
+    if (mb) {
+      link.addEventListener('contextmenu', (e) => { e.preventDefault(); mb.open(); });
+      act.append(mb.trigger);
+    }
+    if (act.children.length) li.append(act);
+    return li;
+  }
+
+  // ---- Collections: entries as a list or as tiles, loaded as you scroll ----
+  // Pages of PAGE rows. The player's `total` cannot be trusted (for albums it is just the
+  // size of the page it returned), so a list is finished when a page comes back short.
+  const PAGE = 50;
+  const pageDone = (n) => n < PAGE;
+  const getViewMode = (key) => { try { return localStorage.getItem(key) === 'tiles' ? 'tiles' : 'list'; } catch (e) { return 'list'; } };
+  const saveViewMode = (key, m) => { try { localStorage.setItem(key, m); } catch (e) { /* storage may be off */ } };
+  // chunkPage pages through a list that is already loaded (a folder, the favorites)
+  const chunkPage = (get, size = 120) => {
+    let shown = 0;
+    return () => {
+      const arr = get(), n = nextChunk(arr.length, shown, size), rows = arr.slice(shown, shown + n);
+      shown += n;
+      return Promise.resolve({ rows, done: shown >= arr.length });
+    };
+  };
+  // collection({my, key, modes, page, opts, empty}) -> {toggle, body, start, destroy}
+  //   page() -> {rows, done}; opts(row) -> entry options for item()/tile()
+  //   An IntersectionObserver on a sentinel pulls in the next page shortly before it is
+  //   reached; no "More" button. Without IntersectionObserver everything is loaded.
+  function collection(c) {
+    let mode = c.modes ? getViewMode(c.key) : 'list';
+    const ul = h('ul'), status = h('div', { class: 'feedmsg dim', 'aria-live': 'polite' }), sentinel = h('div', { class: 'sentinel', 'aria-hidden': 'true' });
+    const all = [];
+    let done = false, busy = false, failed = false, filling = false, dead = false, io = null;
+    const make = (o) => (mode === 'tiles' ? tile(o) : item(o));
+    const paint = () => { ul.className = mode === 'tiles' ? 'grid' : 'list'; ul.replaceChildren(...all.map(make)); };
+    const nearBottom = () => sentinel.getBoundingClientRect().top < innerHeight + 700;
+    async function more() {
+      busy = true; failed = false; status.textContent = 'Loading…';
+      try {
+        const r = await c.page();
+        if (dead || c.my !== nav) return;
+        const rows = r.rows || [];
+        if (rows.length) { const os = rows.map(c.opts); all.push(...os); ul.append(...os.map(make)); }
+        if (!rows.length || r.done) done = true;
+        status.textContent = done && !all.length ? (c.empty || 'Nothing here') : '';
+      } catch (e) {
+        failed = true;
+        status.replaceChildren(h('span', null, 'Could not load more. '), h('button', { class: 'btn', onclick: () => { failed = false; fill(); } }, 'Retry'));
+      } finally { busy = false; }
+    }
+    async function fill() {
+      if (filling) return;
+      filling = true;
+      try {
+        // keep going while the end is near; a hidden list (another tab) waits for the observer
+        while (!done && !failed && !dead && c.my === nav && ul.offsetParent !== null && (!io || nearBottom())) await more();
+      } finally { filling = false; }
+      if (done || dead) { if (io) io.disconnect(); sentinel.remove(); }
+    }
+    function setMode(m) {
+      if (m === mode) return;
+      const first = Array.from(ul.children).findIndex((li) => li.getBoundingClientRect().bottom > 60); // stay on the same entry
+      mode = m;
+      saveViewMode(c.key, m);
+      paint();
+      if (first > 0 && ul.children[first]) ul.children[first].scrollIntoView({ block: 'start' });
+      toggle && Array.from(toggle.children).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+      fill();
+    }
+    const vbtn = (m, icon, label) => {
+      const b = h('button', { class: 'ic', 'aria-label': label, title: label, 'aria-pressed': String(mode === m), onclick: () => setMode(m) }, svg(icon));
+      b.dataset.mode = m;
+      return b;
+    };
+    const toggle = c.modes ? h('div', { class: 'vtoggle', role: 'group', 'aria-label': 'View' }, vbtn('list', 'queue', 'List view'), vbtn('tiles', 'grid', 'Tile view')) : null;
+    ul.className = mode === 'tiles' ? 'grid' : 'list';
+    return {
+      toggle, body: [ul, status, sentinel],
+      start() {
+        if ('IntersectionObserver' in window) {
+          io = new IntersectionObserver((es) => { if (dead || c.my !== nav) { io.disconnect(); return; } if (es.some((e) => e.isIntersecting)) fill(); }, { rootMargin: '700px 0px' });
+          io.observe(sentinel);
+        }
+        fill();
+      },
+      destroy() { dead = true; if (io) io.disconnect(); },
+    };
+  }
+  const listBar = (...kids) => { const k = kids.filter(Boolean); return k.length ? h('div', { class: 'listbar' }, k) : null; };
+
   const head = (title, back, extra) => h('div', { class: 'head' },
     back ? h('a', { class: 'back', href: back, 'aria-label': 'Back' }, svg('back')) : null, h('h2', null, title), extra);
   const msg = (cls, text) => h('div', { class: cls }, text);
@@ -1005,10 +1138,16 @@ if (typeof document !== 'undefined') (function () {
     focusAt(menuKey(-1, acts.length, 'ArrowDown', acts.map((x) => !!x.disabled)));
   }
 
+  // the entry options of a track row, shared by album pages and search
+  const trackOpts = (t) => {
+    const hh = trackHeart(t);
+    return { title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '), end: fmtTime(t.duration_secs), onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) };
+  };
+
   // ---- Favorites ----
   // Tracks and stations live in cliamp, albums/artists/playlists in the bridge;
   // the page only holds the merged listing and a set of keys for the hearts.
-  let favItems = [], favOn = new Set(), favPartial = false, favKind = 'all';
+  let favItems = [], favOn = new Set(), favPartial = false, favKind = 'all', favSig = '';
   const paintHearts = () => document.querySelectorAll('.heart').forEach((b) => b.paint && b.paint());
   async function loadFavs() {
     let r;
@@ -1018,7 +1157,9 @@ if (typeof document !== 'undefined') (function () {
     favOn = favKeys(favItems);
     paintHearts();
     renderNowHeart();
-    if (document.body.dataset.tab === 'favorites') renderFavorites();
+    const sig = favItems.map((i) => i.kind + ':' + i.provider + ':' + i.id).join('|') + (favPartial ? '!' : '');
+    if (document.body.dataset.tab === 'favorites' && sig !== favSig) renderFavorites();
+    favSig = sig;
   }
   // toggleFav flips optimistically, asks the server, trusts its answer and
   // rolls back with a toast when it refuses.
@@ -1078,32 +1219,38 @@ if (typeof document !== 'undefined') (function () {
   }
 
   const FAV_KINDS = [['all', 'All'], ['track', 'Tracks'], ['album', 'Albums'], ['artist', 'Artists'], ['playlist', 'Playlists'], ['radio', 'Radio']];
-  function favRow(it) {
+  function favOpts(it) {
     const prov = it.provider, k = it.kind, title = it.title || '', sub = it.subtitle || '';
     const heart = (req) => heartBtn({ key: favKey(k, prov, it.id), req });
     if (k === 'track') {
       const t = it.track || {};
       const hh = heart({ kind: 'track', track: trackArg(t), title, subtitle: sub });
-      return item({ title, sub, onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) });
+      return { title, sub, tkind: 'note', onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) };
     }
     if (k === 'radio') {
       const hh = heart({ kind: 'radio', provider: 'radio', id: it.id });
-      return item({ title, sub: 'radio', heart: hh, more: radioMore('radio', it.id, hh),
-        onTap: () => { cmd('provider.load', { provider: 'radio', playlist: it.id }, true); rev(); } });
+      return { title, sub: 'radio', tkind: 'radio', heart: hh, more: radioMore('radio', it.id, hh),
+        onTap: () => { cmd('provider.load', { provider: 'radio', playlist: it.id }, true); rev(); } };
     }
     const dir = k === 'album' ? 'albums' : k === 'artist' ? 'artists' : 'playlists';
     const hh = heart({ kind: k, provider: prov, id: it.id, title, subtitle: sub });
-    return item({ title, sub, href: '#browse/' + enc(prov) + '/' + dir + '/' + k + '/' + enc(it.id), heart: hh, more: collectionMore(k, prov, it.id, hh) });
+    return { title, sub, tkind: k === 'artist' ? 'person' : k === 'album' ? 'album' : 'queue', art: itemArtUrl(k, prov, it.id),
+      href: '#browse/' + enc(prov) + '/' + dir + '/' + k + '/' + enc(it.id), heart: hh, more: collectionMore(k, prov, it.id, hh) };
   }
+  let favCol = null;
   function renderFavorites() {
+    if (favCol) favCol.destroy();
     const counts = favCounts(favItems);
     if (favKind !== 'all' && !counts[favKind]) favKind = 'all';
     const chips = h('div', { class: 'seg' }, FAV_KINDS.filter(([k]) => k === 'all' || counts[k]).map(([k, label]) =>
       h('button', { class: k === favKind ? 'on' : null, onclick: () => { favKind = k; renderFavorites(); } }, label + (counts[k] ? ' ' + counts[k] : ''))));
-    const rows = favFilter(favItems, favKind).map(favRow);
+    const rows = favFilter(favItems, favKind);
+    favCol = collection({ my: nav, key: viewModeKey('favorites'), modes: true, page: chunkPage(() => rows), opts: favOpts,
+      empty: 'Nothing here yet. Tap the heart on anything to keep it.' });
     $('favorites').replaceChildren(...[head('Favorites'), chips,
       favPartial && msg('empty', 'The player is offline: tracks and stations are not shown'),
-      rows.length ? h('ul', { class: 'list' }, rows) : msg('empty', 'Nothing here yet. Tap the heart on anything to keep it.')].filter(Boolean));
+      listBar(favCol.toggle), ...favCol.body].filter(Boolean));
+    favCol.start();
   }
 
   // ---- Queue ----
@@ -1182,7 +1329,7 @@ if (typeof document !== 'undefined') (function () {
     const my = ++nav, root = $('browse');
     const p = splitPath(rest) || [''];
     const show = (...kids) => { if (my === nav) root.replaceChildren(...kids.filter(Boolean)); }; // a null child would print as "null"
-    const listUrl = (prov, kind, off) => '/api/library/' + enc(prov) + '/' + kind + '?offset=' + off + '&limit=50';
+    const listUrl = (prov, kind, off) => '/api/library/' + enc(prov) + '/' + kind + '?offset=' + off + '&limit=' + PAGE;
 
     if (p[0] === '' || p[0] === 'home') {
       const ps = await loadProviders();
@@ -1205,45 +1352,40 @@ if (typeof document !== 'undefined') (function () {
     if (p.length >= 4 && (p[2] === 'album' || p[2] === 'artist' || p[2] === 'playlist')) {
       return renderDrill(my, show, hdr, prov, p[2], p[3], kind);
     }
-    // a plain kind list with More paging
-    let off = 0, shown = 0;
-    const ul = h('ul', { class: 'list' }), more = h('button', { class: 'btn', hidden: true }, 'More');
-    const load = async () => {
-      more.disabled = true;
-      let r;
-      try { r = await api.get(listUrl(prov, kind, off)); } catch (e) { more.disabled = false; return toast(e.message, true); }
-      if (my !== nav) return;
-      const rows = r[kind] || r.playlists || [];
-      shown += rows.length; off += rows.length;
-      ul.append(...rows.map((row) => browseRow(prov, kind, row)));
-      more.hidden = !(r.total != null && shown < r.total);
-      more.disabled = false;
-      if (!shown) ul.append(msg('empty', 'Nothing here'));
-    };
-    more.onclick = load;
-    show(hdr, ul, h('div', { class: 'bar' }, more));
-    await load();
+    // a plain kind list, as a list or tiles, loaded as you scroll
+    let off = 0;
+    const col = collection({ my, key: viewModeKey('browse', prov, kind), modes: true, empty: 'Nothing here',
+      page: async () => {
+        const r = await api.get(listUrl(prov, kind, off));
+        const rows = r[kind] || r.playlists || [];
+        off += rows.length;
+        return { rows, done: pageDone(rows.length) };
+      },
+      opts: (row) => browseOpts(prov, kind, row) });
+    show(hdr, listBar(col.toggle), ...col.body);
+    col.start();
   }
-  function browseRow(prov, kind, row) {
+  // the entry options of one row of a provider list
+  function browseOpts(prov, kind, row) {
     const name = rowTitle(row);
     const drillBase = '#browse/' + enc(prov) + '/' + kind + '/';
-    const coll = (k, href, sub, end) => {
+    const coll = (k, href, sub, end, tkind) => {
       const hh = heartBtn({ key: favKey(k, prov, row.id), req: { kind: k, provider: prov, id: row.id, title: name, subtitle: k === 'artist' ? '' : (row.artist || '') } });
-      return item({ title: name, sub, end, href, heart: hh, more: collectionMore(k, prov, row.id, hh) });
+      return { title: name, sub, end, href, tkind, art: itemArtUrl(k, prov, row.id), heart: hh, more: collectionMore(k, prov, row.id, hh) };
     };
     if (kind === 'playlists') {
-      return coll('playlist', drillBase + 'playlist/' + enc(row.id || ''), row.artist || '', row.track_count != null ? plural(row.track_count, 'track') : '');
+      return coll('playlist', drillBase + 'playlist/' + enc(row.id || ''), row.artist || '', row.track_count != null ? plural(row.track_count, 'track') : '', 'queue');
     }
     if (kind === 'albums') {
-      return coll('album', drillBase + 'album/' + enc(row.id || ''), [row.artist, row.year].filter(Boolean).join(' · '));
+      return coll('album', drillBase + 'album/' + enc(row.id || ''), [row.artist, row.year].filter(Boolean).join(' · '), '', 'album');
     }
     if (kind === 'artists') {
-      return coll('artist', drillBase + 'artist/' + enc(row.id || ''), row.album_count != null ? plural(row.album_count, 'album') : row.artist || '');
+      return coll('artist', drillBase + 'artist/' + enc(row.id || ''), row.album_count != null ? plural(row.album_count, 'album') : row.artist || '', '', 'person');
     }
     // radio catalog: stations have no path; tap plays via provider.load
     const hh = row.favoritable ? heartBtn({ on: !!row.favorite || /^★ /.test(row.name || ''), req: { kind: 'radio', provider: prov, id: row.id } }) : null;
-    return item({ title: name, sub: row.genre || '', heart: hh, more: radioMore(prov, row.id, hh),
-      onTap: () => { cmd('provider.load', { provider: prov, playlist: row.id }, true); rev(); } });
+    return { title: name, sub: row.genre || '', tkind: 'radio', heart: hh, more: radioMore(prov, row.id, hh),
+      onTap: () => { cmd('provider.load', { provider: prov, playlist: row.id }, true); rev(); } };
   }
   // ---- Files: the music folder cliamp's own file browser starts in ----
   let filesName;
@@ -1264,74 +1406,75 @@ if (typeof document !== 'undefined') (function () {
     const parent = filesParent(l.path);
     const kindOf = (e) => (e.dir ? 'folder' : 'file');
     const go = (kind, id, mode) => enq({ kind, provider: 'files', id, mode });
-    const row = (e) => {
+    const fileOpts = (e) => {
       const id = filesRel(l.path, e.name);
-      return item({
-        title: e.name, icon: svg(e.dir ? 'folder' : 'note'),
+      return {
+        title: e.name, icon: e.dir ? 'folder' : 'note', tkind: e.dir ? 'folder' : 'note',
+        art: e.dir ? folderArtUrl(id) : '', // a folder shows its cover (or its first album's)
         href: e.dir ? filesHash(id) : null,
         onTap: e.dir ? null : () => go('file', id, 'play'),
         more: () => ({ spec: { kind: kindOf(e) }, run: { play: () => go(kindOf(e), id, 'play'), add: () => go(kindOf(e), id, 'append') } }),
-      });
+      };
     };
-    const ul = h('ul', { class: 'list' });
     const filter = h('input', { type: 'search', class: 'filter', placeholder: 'Filter this folder', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Filter this folder' });
+    // the folder is fully loaded; it is drawn in chunks as you scroll, and again when the filter changes
+    const host = h('div', { class: 'feedhost' });
+    let col = null;
     const draw = () => {
+      if (col) col.destroy();
       const es = filterEntries(l.entries, filter.value);
-      ul.replaceChildren(...(es.length ? es.map(row) : [msg('empty', l.entries.length ? 'Nothing matches' : 'No folders or audio files here')]));
+      col = collection({ my, key: viewModeKey('files'), modes: true, page: chunkPage(() => es), opts: fileOpts,
+        empty: l.entries.length ? 'Nothing matches' : 'No folders or audio files here' });
+      host.replaceChildren(...col.body);
+      slot.replaceChildren(...[col.toggle].filter(Boolean)); // the filter box itself stays put, so typing keeps its focus
+      col.start();
     };
+    const slot = h('span', { class: 'vslot' });
+    const bar = h('div', { class: 'listbar' }, ...[l.entries.length > 8 ? filter : null, slot].filter(Boolean));
     filter.addEventListener('input', draw);
     // the whole folder (everything below it); not offered for the library root
     const actions = l.path && l.entries.length ? h('div', { class: 'hdr-actions' },
       h('button', { class: 'btn primary', onclick: () => go('folder', l.path, 'play') }, '▶ Play'),
       h('button', { class: 'btn', onclick: () => go('folder', l.path, 'append') }, '+ Add')) : null;
-    draw();
     const seg = h('div', { class: 'seg' },
       h('a', { href: '#browse/local/playlists' }, 'Playlists'), h('a', { href: filesHash(''), class: 'on' }, 'Files'));
     show(head(l.path ? l.name : 'Local', parent === null ? '#browse' : filesHash(parent), actions), seg,
-      l.path ? h('div', { class: 'crumb dim' }, l.path.split('/').join(' › ')) : null,
-      l.entries.length > 8 ? filter : null, ul);
+      l.path ? h('div', { class: 'crumb dim' }, l.path.split('/').join(' › ')) : null, bar, host);
+    draw();
   }
 
   async function renderDrill(my, show, hdr, prov, what, id, backKind) {
     // an artist drills into its albums (each opens the album page); album and
     // playlist drill into tracks
     const isArtist = what === 'artist';
-    const url = (off) => '/api/library/' + enc(prov) + '/' + what + '/' + enc(id) + '/' + (isArtist ? 'albums' : 'tracks') + '?offset=' + off + '&limit=50';
-    let off = 0, shown = 0, title = what === 'album' ? 'Album' : what === 'artist' ? 'Artist' : 'Playlist';
-    const ul = h('ul', { class: 'list' }), more = h('button', { class: 'btn', hidden: true }, 'More');
+    const url = (off) => '/api/library/' + enc(prov) + '/' + what + '/' + enc(id) + '/' + (isArtist ? 'albums' : 'tracks') + '?offset=' + off + '&limit=' + PAGE;
+    let off = 0;
+    const title = what === 'album' ? 'Album' : what === 'artist' ? 'Artist' : 'Playlist';
     const back = '#browse/' + enc(prov) + '/' + (backKind || 'playlists');
     // the page header's name is generic, so the heart learns the album/artist
     // name from the first rows; playlists are hearted from their list row
     const hreq = { kind: what, provider: prov, id, title: '', subtitle: '' };
     const hheart = what === 'playlist' ? null : heartBtn({ key: favKey(what, prov, id), req: hreq });
-    const load = async () => {
-      more.disabled = true;
-      let r;
-      try { r = await api.get(url(off)); } catch (e) { show(head(title, back)); ul.append(msg('error', e.message)); return; }
-      if (my !== nav) return;
-      const rows = (isArtist ? r.albums : r.tracks) || [];
-      if (!shown && rows[0]) {
-        if (what === 'album') { hreq.title = rows[0].album || ''; hreq.subtitle = rows[0].artist || ''; }
-        if (isArtist) hreq.title = rows[0].artist || '';
-      }
-      shown += rows.length; off += rows.length;
-      ul.append(...rows.map(isArtist
-        ? (a) => browseRow(prov, 'albums', a)
-        : (t) => { const hh = trackHeart(t); return item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
-          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) }); }));
-      more.hidden = !(r.total != null && shown < r.total);
-      more.disabled = false;
-      if (!shown) ul.append(msg('empty', isArtist ? 'No albums' : 'No tracks'));
-    };
-    more.onclick = load;
-    const extra = what === 'artist' ? null : h('button', { class: 'btn primary', onclick: () => {
-      if (!window.confirm('replace the queue with ' + what + ' "' + title + '"?')) return;
-      cmd(what === 'album' ? 'provider.load_album' : 'provider.load',
-        what === 'album' ? { provider: prov, album: id } : { provider: prov, playlist: id }, true);
-      rev();
-    } }, '▶ play ' + what);
-    show(head(title, back, h('div', { class: 'hdr-actions' }, hheart, extra)), ul, h('div', { class: 'bar' }, more));
-    await load();
+    let first = true;
+    const col = collection({ my, key: viewModeKey('browse', prov, 'artist-albums'), modes: isArtist, empty: isArtist ? 'No albums' : 'No tracks',
+      page: async () => {
+        const r = await api.get(url(off));
+        const rows = (isArtist ? r.albums : r.tracks) || [];
+        if (first && rows[0]) {
+          first = false;
+          if (what === 'album') { hreq.title = rows[0].album || ''; hreq.subtitle = rows[0].artist || ''; }
+          if (isArtist) hreq.title = rows[0].artist || '';
+        }
+        off += rows.length;
+        return { rows, done: pageDone(rows.length) };
+      },
+      opts: isArtist ? (a) => browseOpts(prov, 'albums', a) : trackOpts });
+    const go = (mode) => enq({ kind: what, provider: prov, id, mode });
+    const actions = h('div', { class: 'hdr-actions' }, hheart,
+      h('button', { class: 'btn primary', onclick: () => go('play') }, '▶ Play'),
+      h('button', { class: 'btn', onclick: () => go('append') }, '+ Add'));
+    show(head(title, back, actions), listBar(col.toggle), ...col.body);
+    col.start();
   }
 
   // ---- Search ----
@@ -1364,11 +1507,7 @@ if (typeof document !== 'undefined') (function () {
       const r = await api.get('/api/search/' + enc(searchProv) + '?q=' + enc(q) + '&offset=0&limit=50');
       if (my !== searchSeq) return;
       const rows = r.tracks || [];
-      out.replaceChildren(rows.length ? h('ul', { class: 'list' }, rows.map((t) => {
-        const hh = trackHeart(t);
-        return item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
-          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) });
-      })) : msg('empty', 'Nothing found'));
+      out.replaceChildren(rows.length ? h('ul', { class: 'list' }, rows.map((t) => item(trackOpts(t)))) : msg('empty', 'Nothing found'));
     } catch (e) {
       if (my === searchSeq) out.replaceChildren(msg('error', e.message));
     }

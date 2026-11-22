@@ -97,6 +97,17 @@ listing folders, so the bridge, which runs on the same machine, does it.
   symlinks that lead out of it are refused, and the page never sees absolute paths.
   If the folder is missing the tile is simply not shown.
 
+## Tile view and infinite scroll
+
+Every collection list (Navidrome albums, artists and playlists, local playlists, radio, folders, favorites, an
+artist's albums) has a List / Tiles switch. The choice is remembered per list in the browser. Tiles show a cover:
+Navidrome covers by album, artist or playlist id (the bridge reads the `[navidrome]` login from cliamp's own
+config and never sends it to the browser), and a folder's `cover`/`folder`/`front`/`album` image (or its first
+sub-folder's) as a small cached thumbnail. Everything else gets a coloured placeholder with the kind's icon.
+
+Lists load as you scroll, one page at a time, with no "More" button. Lists that are already complete (a folder,
+favorites) are drawn in chunks.
+
 ## Item menu
 
 Every list item has a "..." menu (right-click works too). On a narrow or touch
