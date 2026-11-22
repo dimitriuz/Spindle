@@ -80,6 +80,22 @@ Pictures are fetched once and cached under `<data-dir>/art/` (200 MB cap, least
 recently used removed first). The bridge only ever contacts the Navidrome host
 named in the track's own stream URL; nothing goes to outside services.
 
+## Item menu
+
+Every list item has a "..." menu (right-click works too). On a narrow or touch
+screen it is a bottom sheet, on a wide pointer screen a popover next to the
+button; arrows, Home/End, Enter and Escape work, and Escape returns the focus.
+
+- **Play** clears the queue, adds the item and starts playing: a track, an
+  album, a playlist, an artist (all their albums) or a radio station.
+- **Add to queue** puts the item at the end of cliamp's up-next list, in order,
+  with its title, artist and artwork intact. (cliamp's other way to append,
+  `queue {path}`, adds a bare URL with no metadata, so it is not used.) Adding
+  an album, playlist or artist runs in the background with a progress toast and
+  a Stop button; there is no size limit, 12,000 tracks take a few minutes.
+- Queue and up-next rows have Play from here, Play next, Move up/down and Remove.
+- Favorite is in every menu next to the heart.
+
 ## Favorites
 
 A heart on anything: tracks, albums, artists, playlists and radio stations, on

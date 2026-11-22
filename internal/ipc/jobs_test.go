@@ -3,6 +3,7 @@ package ipc
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -87,34 +88,66 @@ func TestSubmitJobStopsAtCanceled(t *testing.T) {
 	}
 }
 
-// TestSubmitJobPollsEveryTwoHundredMs: the poll interval is pinned at 200 ms.
-// Slower and the browser's 10 s command cap starts timing jobs out; faster and
-// the daemon is hammered while a job runs.
-func TestSubmitJobPollsEveryTwoHundredMs(t *testing.T) {
+// TestSubmitJobFinishesFastJobsQuickly: most operations are done within a few
+// milliseconds, so the first polls must not wait a fixed 200 ms. (That wait
+// made appending 12,000 tracks one by one take forty minutes.)
+func TestSubmitJobFinishesFastJobsQuickly(t *testing.T) {
+	polls := 0
 	f := newFakeIPC(t, func(req map[string]any) []string {
+		id := req["id"].(string)
+		if req["method"] == "job.get" {
+			polls++
+			state := "running"
+			if polls >= 3 {
+				state = "succeeded"
+			}
+			return []string{`{"version":2,"id":"` + id + `","ok":true,"job":{"id":"j1","operation":"queue","state":"` + state + `"}}`}
+		}
+		return []string{`{"version":2,"id":"` + id + `","ok":true,"job":{"id":"j1","operation":"queue","state":"queued"}}`}
+	})
+	c := NewConn(f.path)
+	defer c.Close()
+	start := time.Now()
+	job, err := c.SubmitJob(context.Background(), "queue", nil)
+	if err != nil || job.State != "succeeded" {
+		t.Fatalf("%v %+v", err, job)
+	}
+	if took := time.Since(start); took > 100*time.Millisecond {
+		t.Fatalf("a job that finishes on the third poll took %v; early polls must back off from milliseconds, not 200 ms", took)
+	}
+}
+
+// TestSubmitJobSettlesAtTwoHundredMs: a job that keeps running is polled at
+// most every 200 ms once it has had time to finish. Slower and the browser's
+// 10 s command cap starts timing jobs out; faster and the daemon is hammered.
+func TestSubmitJobSettlesAtTwoHundredMs(t *testing.T) {
+	var mu sync.Mutex
+	var at []time.Time
+	f := newFakeIPC(t, func(req map[string]any) []string {
+		if req["method"] == "job.get" {
+			mu.Lock()
+			at = append(at, time.Now())
+			mu.Unlock()
+		}
 		return []string{`{"version":2,"id":"` + req["id"].(string) + `","ok":true,"job":{"id":"j1","operation":"play","state":"running"}}`}
 	})
 	c := NewConn(f.path)
 	defer c.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 550*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1800*time.Millisecond)
 	defer cancel()
 	job, err := c.SubmitJob(ctx, "play", nil)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("want the ctx deadline back, got %v", err)
+	if !errors.Is(err, context.DeadlineExceeded) || job == nil || job.State != "running" {
+		t.Fatalf("want the deadline and the last known job, got %v %+v", err, job)
 	}
-	if job == nil || job.State != "running" {
-		t.Fatalf("the last known job must come back with the error, got %+v", job)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(at) < 6 || len(at) > 14 {
+		t.Fatalf("%d polls in 1.8 s: expected a quick start then one per 200 ms (6..14)", len(at))
 	}
-	gets := 0
-	f.mu.Lock()
-	for _, r := range f.received {
-		if r["method"] == "job.get" {
-			gets++
+	for i := len(at) - 3; i < len(at)-1; i++ { // the settled gaps
+		if gap := at[i+1].Sub(at[i]); gap < 150*time.Millisecond || gap > 260*time.Millisecond {
+			t.Fatalf("settled poll gap %v, want about 200 ms", gap)
 		}
-	}
-	f.mu.Unlock()
-	if gets < 1 || gets > 3 {
-		t.Fatalf("polled job.get %d times in 550ms, want 1..3 (one poll per 200ms)", gets)
 	}
 }
 

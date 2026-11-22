@@ -93,6 +93,57 @@ function techLine(info) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// ---- item menu ----
+// rowActions is the menu of one item: Play (clear the queue, add, play) and
+// Add to queue everywhere they make sense, plus the extras of each kind.
+function rowActions(spec) {
+  const A = (id, label, icon, more) => Object.assign({ id, label, icon }, more);
+  const fav = spec.fav === undefined ? [] : [A('fav', spec.fav ? 'Remove from favorites' : 'Favorite', spec.fav ? 'heartfill' : 'heart')];
+  const edges = (i, n) => [A('up', 'Move up', 'up', { disabled: i <= 0 }), A('down', 'Move down', 'down', { disabled: i >= n - 1 })];
+  switch (spec.kind) {
+    case 'track': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add'), ...fav];
+    case 'album': case 'playlist': case 'artist': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add'), ...fav];
+    case 'radio': return [A('play', 'Play', 'play'), ...fav];
+    case 'queue': return [A('playfrom', 'Play from here', 'play'), A('next', 'Play next', 'next'), ...edges(spec.index, spec.count), A('remove', 'Remove', 'trash', { danger: true })];
+    case 'playnext': return [...edges(spec.index, spec.count), A('remove', 'Remove', 'trash', { danger: true })];
+  }
+  return [];
+}
+// narrow or touch screens get a bottom sheet, wide pointer screens a popover
+const menuMode = (width, coarse) => (coarse || width < 600 ? 'sheet' : 'popover');
+// menuPlacement puts a popover under its button, right edges aligned, flipping
+// upward near the bottom and never leaving the window.
+function menuPlacement(a, size, view) {
+  const edge = 8, gap = 4;
+  const left = Math.max(edge, Math.min(a.left + a.width - size.width, view.width - size.width - edge));
+  let top = a.top + a.height + gap, flipped = false;
+  if (top + size.height > view.height - edge) { top = a.top - size.height - gap; flipped = true; }
+  return { left, top: Math.max(edge, top), flipped };
+}
+// menuKey moves the focus through n items (wrapping, skipping disabled ones).
+function menuKey(i, n, key, disabled) {
+  if (n <= 0) return -1;
+  const off = (j) => !!(disabled && disabled[j]);
+  const step = (from, dir) => { for (let k = 1; k <= n; k++) { const j = (((from + dir * k) % n) + n) % n; if (!off(j)) return j; } return from; };
+  switch (key) {
+    case 'ArrowDown': return step(i, 1);
+    case 'ArrowUp': return i < 0 ? step(0, -1) : step(i, -1);
+    case 'Home': return off(0) ? step(0, 1) : 0;
+    case 'End': return off(n - 1) ? step(n - 1, -1) : n - 1;
+  }
+  return i;
+}
+// progressText is the toast for a background Play / Add to queue.
+function progressText(ev, mode) {
+  const f = (n) => Number(n || 0).toLocaleString('en-US');
+  switch (ev.state) {
+    case 'running': return ev.total ? 'Adding ' + f(ev.done) + ' / ' + f(ev.total) + '…' : 'Adding…';
+    case 'done': return mode === 'play' ? 'Playing' : 'Added ' + f(ev.total) + (ev.total === 1 ? ' track' : ' tracks');
+    case 'cancelled': return 'Stopped at ' + f(ev.done) + ' of ' + f(ev.total);
+    default: return 'Could not ' + (mode === 'play' ? 'play' : 'add') + ': ' + (ev.error || 'unknown error');
+  }
+}
+
 // ---- favorites ----
 const favKey = (kind, provider, id) => kind + ':' + provider + ':' + id;
 // A track is identified by its provider's id, else (a local file) by its path.
@@ -221,7 +272,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -244,6 +295,10 @@ if (typeof document !== 'undefined') (function () {
     search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
     expand: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
     collapse: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
+    add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    up: 'M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z',
+    down: 'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z',
+    trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
     heart: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
     heartfill: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
     back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
@@ -270,11 +325,6 @@ if (typeof document !== 'undefined') (function () {
     for (const k of kids.flat()) if (k != null && k !== false) el.append(k);
     return el;
   }
-  const iconBtn = (name, label, fn) => {
-    const b = h('button', { class: 'more', 'aria-label': label, onclick: fn });
-    b.append(svg(name));
-    return b;
-  };
 
   // ---- feedback ----
   function toast(msg, err) {
@@ -346,6 +396,7 @@ if (typeof document !== 'undefined') (function () {
     mine.addEventListener('playlist', () => { up(); loadQueue(); });
     mine.addEventListener('resync', () => { up(); dispatch({ type: 'reset' }); loadState(); loadQueue(); loadFavs(); });
     mine.addEventListener('favorites', () => { up(); loadFavs(); });
+    mine.addEventListener('enqueue', (e) => { up(); onEnqueue(JSON.parse(e.data)); });
     mine.addEventListener('player', (e) => {
       up();
       const d = JSON.parse(e.data);
@@ -743,29 +794,31 @@ if (typeof document !== 'undefined') (function () {
   }
 
   // ---- rows and menus ----
-  function closeMenus(except) {
-    document.querySelectorAll('li.open').forEach((l) => { if (l !== except) l.classList.remove('open'); });
-  }
-  // item is one list entry: a row (a link, or tappable with onTap), plus a ⋯
-  // button opening its menu of {label, fn}.
   function item(o) {
     const li = h('li', { class: o.cur ? 'cur' : null });
     const inner = [h('div', { class: 'txt' }, h('div', { class: 't1' }, o.title || ''), o.sub ? h('div', { class: 't2' }, o.sub) : null)];
     if (o.end) inner.push(h('div', { class: 'end' }, o.end));
-    const toggle = () => { closeMenus(li); li.classList.toggle('open'); };
+    // every item has the same "..." menu; right-click opens it too
+    let trigger = null;
+    const open = () => {
+      if (menuState && menuState.trigger === trigger) { closeMenu(); return; }
+      const m = o.more();
+      openMenu({ trigger, title: o.title || '', subtitle: o.sub || '', spec: m.spec, run: m.run });
+    };
+    const tap = o.onTap || (o.more ? open : null);
     const row = o.href ? h('a', { class: 'row', href: o.href }, inner)
-      : h('div', { class: 'row', role: 'button', tabindex: 0, onclick: o.onTap || toggle,
-        onkeydown: (e) => { if (e.key === 'Enter') (o.onTap || toggle)(); } }, inner);
+      : h('div', { class: 'row', role: 'button', tabindex: 0, onclick: tap,
+        onkeydown: (e) => { if (e.key === 'Enter' && tap) tap(); } }, inner);
     const top = h('div', { class: 'toprow' }, row);
     if (o.heart) top.append(o.heart);
-    if (o.menu) {
-      top.append(iconBtn('more', 'More', toggle));
-      li.append(top, h('div', { class: 'menu' }, o.menu.map((m) =>
-        h('button', { class: 'btn' + (m.danger ? ' danger' : ''), onclick: () => { li.classList.remove('open'); m.fn(); } }, m.label))));
-    } else {
-      if (o.heart) top.append(h('span', { class: 'ic-spacer' })); // keep hearts in one column on rows without a menu
-      li.append(top);
+    if (o.more) {
+      trigger = h('button', { class: 'ic more', 'aria-label': 'More actions', 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
+      trigger.append(svg('more'));
+      trigger.onclick = (e) => { e.preventDefault(); e.stopPropagation(); open(); };
+      row.addEventListener('contextmenu', (e) => { e.preventDefault(); open(); });
+      top.append(trigger);
     }
+    li.append(top);
     return li;
   }
   const head = (title, back, extra) => h('div', { class: 'head' },
@@ -778,16 +831,124 @@ if (typeof document !== 'undefined') (function () {
   // path string fails with invalid_params. Drop only row bookkeeping.
   const trackArg = (t) => { const o = Object.assign({}, t); delete o.index; delete o.queued; return o; };
   const playTrack = (t) => cmd('track.play', { track: trackArg(t) }, true);
-  const queueTrackNext = (t) => cmd('track.queue', { track: trackArg(t) }, true);
-  const trackMenu = (t) => [{ label: 'Play', fn: () => playTrack(t) }, { label: 'Play next', fn: () => queueTrackNext(t) }];
-  // replacing the queue is audible and destructive — confirm first (spec v3).
-  const replaceMenu = (kind, provider, id, name) => [{
-    label: '▶ play ' + kind, fn: () => {
-      if (!window.confirm('replace the queue with ' + kind + ' "' + name + '"?')) return;
-      cmd(kind === 'album' ? 'provider.load_album' : 'provider.load', kind === 'album' ? { provider, album: id } : { provider, playlist: id }, true);
-      rev();
-    },
-  }];
+
+  // ---- Play / Add to queue ----
+  // Play clears the queue and plays; Add to queue appends. The bridge does the
+  // multi-step work in the background and reports progress over SSE.
+  let enqMode = 'append';
+  async function enq(body) {
+    enqMode = body.mode;
+    try { await api.post('/api/enqueue', body); }
+    catch (e) { toast(e.status === 409 ? 'Already adding to the queue' : e.status === 403 ? 'Unknown track' : (e.message || 'Could not start'), true); }
+  }
+  let progEl = null;
+  function onEnqueue(ev) {
+    const text = progressText(ev, enqMode);
+    if (ev.state === 'running') {
+      if (!progEl) {
+        progEl = h('div', { class: 'toast prog' }, h('span', { class: 'ptext' }),
+          h('button', { class: 'btn', onclick: () => api.post('/api/enqueue/cancel', {}).catch(() => {}) }, 'Stop'));
+        $('toasts').append(progEl);
+      }
+      progEl.querySelector('.ptext').textContent = text;
+      return;
+    }
+    if (progEl) { progEl.remove(); progEl = null; }
+    toast(text, ev.state === 'failed');
+  }
+
+  // what each kind of item offers in its menu (see rowActions)
+  const favState = (heart) => (heart ? heart.isOn() : undefined);
+  const trackMore = (t, heart) => () => ({ spec: { kind: 'track', fav: favState(heart) }, run: {
+    play: () => enq({ kind: 'track', track: trackArg(t), mode: 'play' }),
+    add: () => enq({ kind: 'track', track: trackArg(t), mode: 'append' }),
+    fav: () => heart && heart.toggle(),
+  } });
+  const collectionMore = (kind, provider, id, heart) => () => ({ spec: { kind, fav: favState(heart) }, run: {
+    play: () => enq({ kind, provider, id, mode: 'play' }),
+    add: () => enq({ kind, provider, id, mode: 'append' }),
+    fav: () => heart && heart.toggle(),
+  } });
+  const radioMore = (provider, id, heart) => () => ({ spec: { kind: 'radio', fav: favState(heart) }, run: {
+    play: () => { cmd('provider.load', { provider, playlist: id }, true); rev(); },
+    fav: () => heart && heart.toggle(),
+  } });
+
+  // ---- Item menu ----
+  // One menu for every item: a bottom sheet on narrow or touch screens, a popover
+  // anchored to the "..." otherwise. Keyboard: arrows, Home/End, Enter/Space,
+  // Escape (focus returns to the "...").
+  let menuState = null;
+  function closeMenu(refocus = true) {
+    const m = menuState;
+    if (!m) return;
+    menuState = null;
+    m.cleanup();
+    m.root.remove();
+    m.trigger.setAttribute('aria-expanded', 'false');
+    if (refocus) m.trigger.focus();
+  }
+  function openMenu({ trigger, title, subtitle, spec, run }) {
+    closeMenu(false);
+    const acts = rowActions(spec);
+    if (!acts.length) return;
+    const sheet = menuMode(innerWidth, matchMedia('(pointer: coarse)').matches) === 'sheet';
+    const list = h('div', { class: 'mlist', role: 'menu', 'aria-label': title || 'Actions' }, acts.map((a) => {
+      const b = h('button', { class: 'mi' + (a.danger ? ' danger' : ''), role: 'menuitem', tabindex: '-1', disabled: a.disabled ? 'disabled' : null }, svg(a.icon), h('span', null, a.label));
+      b.onclick = () => { closeMenu(); if (run[a.id]) run[a.id](); };
+      return b;
+    }));
+    const items = () => Array.from(list.querySelectorAll('.mi'));
+    const focusAt = (i) => { const el = items()[i]; if (el) el.focus(); };
+    list.addEventListener('keydown', (e) => {
+      const els = items();
+      if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+      else if (e.key === 'Tab') closeMenu(false); // focus moves on naturally
+      else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+        e.preventDefault();
+        focusAt(menuKey(els.indexOf(document.activeElement), els.length, e.key, els.map((x) => x.disabled)));
+      }
+    });
+    const cleanups = [];
+    let root;
+    if (sheet) {
+      const box = h('div', { class: 'msheet' }, h('div', { class: 'mgrab' }),
+        h('div', { class: 'mh' }, h('b', null, title), subtitle ? h('small', null, subtitle) : null), list,
+        h('button', { class: 'mcancel', onclick: () => closeMenu() }, 'Cancel'));
+      root = h('div', { class: 'mscrim', onclick: (e) => { if (e.target === root) closeMenu(); } }, box);
+      let y0 = null;
+      box.addEventListener('touchstart', (e) => { y0 = e.touches[0].clientY; box.style.transition = 'none'; }, { passive: true });
+      box.addEventListener('touchmove', (e) => {
+        if (y0 == null) return;
+        const dy = e.touches[0].clientY - y0;
+        if (dy > 0 && list.scrollTop === 0) box.style.transform = 'translateY(' + dy + 'px)';
+      }, { passive: true });
+      box.addEventListener('touchend', (e) => {
+        if (y0 == null) return;
+        const dy = e.changedTouches[0].clientY - y0;
+        y0 = null; box.style.transition = '';
+        if (dy > 80) closeMenu(); else box.style.transform = '';
+      });
+      document.body.append(root);
+    } else {
+      root = h('div', { class: 'mpop' }, list);
+      document.body.append(root);
+      const a = trigger.getBoundingClientRect(), sz = root.getBoundingClientRect();
+      const pos = menuPlacement({ left: a.left, top: a.top, width: a.width, height: a.height }, { width: sz.width, height: sz.height }, { width: innerWidth, height: innerHeight });
+      root.style.left = pos.left + 'px';
+      root.style.top = pos.top + 'px';
+      root.classList.toggle('up', pos.flipped);
+      const outside = (e) => { if (!root.contains(e.target) && !trigger.contains(e.target)) closeMenu(false); };
+      const away = (e) => { if (!root.contains(e.target)) closeMenu(false); };
+      document.addEventListener('pointerdown', outside, true);
+      addEventListener('scroll', away, true);
+      addEventListener('resize', away);
+      cleanups.push(() => { document.removeEventListener('pointerdown', outside, true); removeEventListener('scroll', away, true); removeEventListener('resize', away); });
+    }
+    menuState = { root, trigger, cleanup: () => cleanups.forEach((f) => f()) };
+    trigger.setAttribute('aria-expanded', 'true');
+    focusAt(menuKey(-1, acts.length, 'ArrowDown', acts.map((x) => !!x.disabled)));
+  }
 
   // ---- Favorites ----
   // Tracks and stations live in cliamp, albums/artists/playlists in the bridge;
@@ -823,7 +984,9 @@ if (typeof document !== 'undefined') (function () {
     const isOn = () => (o.key ? favOn.has(o.key) : local);
     const setOn = (v) => { if (o.key) { if (v) favOn.add(o.key); else favOn.delete(o.key); paintHearts(); } else { local = v; b.paint(); } };
     b.paint = () => { const on = isOn(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); setIcon(b, on ? 'heartfill' : 'heart'); };
-    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); toggleFav(isOn(), o.req, setOn); };
+    b.isOn = isOn;
+    b.toggle = () => toggleFav(isOn(), o.req, setOn);
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); b.toggle(); };
     b.paint();
     return b;
   }
@@ -865,18 +1028,17 @@ if (typeof document !== 'undefined') (function () {
     const heart = (req) => heartBtn({ key: favKey(k, prov, it.id), req });
     if (k === 'track') {
       const t = it.track || {};
-      return item({ title, sub, onTap: () => playTrack(t), menu: trackMenu(t), heart: heart({ kind: 'track', track: trackArg(t), title, subtitle: sub }) });
+      const hh = heart({ kind: 'track', track: trackArg(t), title, subtitle: sub });
+      return item({ title, sub, onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) });
     }
     if (k === 'radio') {
-      return item({ title, sub: 'radio', heart: heart({ kind: 'radio', provider: 'radio', id: it.id }), onTap: () => {
-        if (!window.confirm('play station "' + title + '"? this replaces the queue')) return;
-        cmd('provider.load', { provider: 'radio', playlist: it.id }, true); rev();
-      } });
+      const hh = heart({ kind: 'radio', provider: 'radio', id: it.id });
+      return item({ title, sub: 'radio', heart: hh, more: radioMore('radio', it.id, hh),
+        onTap: () => { cmd('provider.load', { provider: 'radio', playlist: it.id }, true); rev(); } });
     }
     const dir = k === 'album' ? 'albums' : k === 'artist' ? 'artists' : 'playlists';
-    return item({ title, sub, href: '#browse/' + enc(prov) + '/' + dir + '/' + k + '/' + enc(it.id),
-      menu: k === 'artist' ? null : replaceMenu(k, prov, it.id, title),
-      heart: heart({ kind: k, provider: prov, id: it.id, title, subtitle: sub }) });
+    const hh = heart({ kind: k, provider: prov, id: it.id, title, subtitle: sub });
+    return item({ title, sub, href: '#browse/' + enc(prov) + '/' + dir + '/' + k + '/' + enc(it.id), heart: hh, more: collectionMore(k, prov, it.id, hh) });
   }
   function renderFavorites() {
     const counts = favCounts(favItems);
@@ -897,12 +1059,12 @@ if (typeof document !== 'undefined') (function () {
     if (q.play_next && q.play_next.length) {
       sections.push(h('div', { class: 'sub' }, 'Play next'), h('ul', { class: 'list' },
         q.play_next.map((t, i) => item({
-          title: t.title || t.path, sub: t.artist || '', end: fmtTime(t.duration),
-          menu: [
-            { label: 'Remove', danger: true, fn: () => { cmd('playnext.remove', { index: i }, true); rev(); } },
-            { label: 'Move up', fn: () => moveCmd('playnext.move', i, -1) },
-            { label: 'Move down', fn: () => moveCmd('playnext.move', i, 1) },
-          ],
+          title: t.title || t.path, sub: t.artist || '', end: fmtTime(t.duration_secs != null ? t.duration_secs : t.duration),
+          more: () => ({ spec: { kind: 'playnext', index: i, count: q.play_next.length }, run: {
+            up: () => moveCmd('playnext.move', i, -1),
+            down: () => moveCmd('playnext.move', i, 1),
+            remove: () => { cmd('playnext.remove', { index: i }, true); rev(); },
+          } }),
         })))
       );
     }
@@ -914,13 +1076,15 @@ if (typeof document !== 'undefined') (function () {
     sections.push(h('div', { class: 'sub' }, 'Queue'), h('ul', { class: 'list' },
       (q.tracks || []).map((t, i) => {
         const li = item({
-          title: t.title || t.path, sub: t.artist || '', end: fmtTime(t.duration), cur: i === cur,
+          title: t.title || t.path, sub: t.artist || '', end: fmtTime(t.duration_secs != null ? t.duration_secs : t.duration), cur: i === cur,
           onTap: () => { if (i !== cur) cmd('queue.play', { index: i }, true); },
-          menu: [
-            { label: 'Remove', danger: true, fn: () => { cmd('queue.remove', { index: i }, true); rev(); } },
-            { label: 'Move up', fn: () => moveCmd('queue.move', i, -1) },
-            { label: 'Move down', fn: () => moveCmd('queue.move', i, 1) },
-          ],
+          more: () => ({ spec: { kind: 'queue', index: i, count: (q.tracks || []).length }, run: {
+            playfrom: () => cmd('queue.play', { index: i }, true),
+            next: () => { cmd('queue.enqueue', { index: i }, true); rev(); },
+            up: () => moveCmd('queue.move', i, -1),
+            down: () => moveCmd('queue.move', i, 1),
+            remove: () => { cmd('queue.remove', { index: i }, true); rev(); },
+          } }),
         });
         li.dataset.i = i;
         return li;
@@ -1008,26 +1172,23 @@ if (typeof document !== 'undefined') (function () {
   function browseRow(prov, kind, row) {
     const name = rowTitle(row);
     const drillBase = '#browse/' + enc(prov) + '/' + kind + '/';
+    const coll = (k, href, sub, end) => {
+      const hh = heartBtn({ key: favKey(k, prov, row.id), req: { kind: k, provider: prov, id: row.id, title: name, subtitle: k === 'artist' ? '' : (row.artist || '') } });
+      return item({ title: name, sub, end, href, heart: hh, more: collectionMore(k, prov, row.id, hh) });
+    };
     if (kind === 'playlists') {
-      return item({ title: name, sub: row.artist || '', end: row.track_count != null ? plural(row.track_count, 'track') : '',
-        href: drillBase + 'playlist/' + enc(row.id || ''), menu: replaceMenu('playlist', prov, row.id, name),
-        heart: heartBtn({ key: favKey('playlist', prov, row.id), req: { kind: 'playlist', provider: prov, id: row.id, title: name, subtitle: row.artist || '' } }) });
+      return coll('playlist', drillBase + 'playlist/' + enc(row.id || ''), row.artist || '', row.track_count != null ? plural(row.track_count, 'track') : '');
     }
     if (kind === 'albums') {
-      return item({ title: name, sub: [row.artist, row.year].filter(Boolean).join(' · '),
-        href: drillBase + 'album/' + enc(row.id || ''), menu: replaceMenu('album', prov, row.id, name),
-        heart: heartBtn({ key: favKey('album', prov, row.id), req: { kind: 'album', provider: prov, id: row.id, title: name, subtitle: row.artist || '' } }) });
+      return coll('album', drillBase + 'album/' + enc(row.id || ''), [row.artist, row.year].filter(Boolean).join(' · '));
     }
     if (kind === 'artists') {
-      return item({ title: name, sub: row.album_count != null ? plural(row.album_count, 'album') : row.artist || '',
-        href: drillBase + 'artist/' + enc(row.id || ''),
-        heart: heartBtn({ key: favKey('artist', prov, row.id), req: { kind: 'artist', provider: prov, id: row.id, title: name, subtitle: '' } }) });
+      return coll('artist', drillBase + 'artist/' + enc(row.id || ''), row.album_count != null ? plural(row.album_count, 'album') : row.artist || '');
     }
     // radio catalog: stations have no path; tap plays via provider.load
-    return item({ title: name, sub: row.genre || '', onTap: () => {
-      if (!window.confirm('play station "' + name + '"? this replaces the queue')) return;
-      cmd('provider.load', { provider: prov, playlist: row.id }, true); rev();
-    }, heart: row.favoritable ? heartBtn({ on: !!row.favorite || /^★ /.test(row.name || ''), req: { kind: 'radio', provider: prov, id: row.id } }) : null });
+    const hh = row.favoritable ? heartBtn({ on: !!row.favorite || /^★ /.test(row.name || ''), req: { kind: 'radio', provider: prov, id: row.id } }) : null;
+    return item({ title: name, sub: row.genre || '', heart: hh, more: radioMore(prov, row.id, hh),
+      onTap: () => { cmd('provider.load', { provider: prov, playlist: row.id }, true); rev(); } });
   }
   async function renderDrill(my, show, hdr, prov, what, id, backKind) {
     // an artist drills into its albums (each opens the album page); album and
@@ -1054,8 +1215,8 @@ if (typeof document !== 'undefined') (function () {
       shown += rows.length; off += rows.length;
       ul.append(...rows.map(isArtist
         ? (a) => browseRow(prov, 'albums', a)
-        : (t) => item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
-          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t), heart: trackHeart(t) })));
+        : (t) => { const hh = trackHeart(t); return item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
+          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) }); }));
       more.hidden = !(r.total != null && shown < r.total);
       more.disabled = false;
       if (!shown) ul.append(msg('empty', isArtist ? 'No albums' : 'No tracks'));
@@ -1101,9 +1262,11 @@ if (typeof document !== 'undefined') (function () {
       const r = await api.get('/api/search/' + enc(searchProv) + '?q=' + enc(q) + '&offset=0&limit=50');
       if (my !== searchSeq) return;
       const rows = r.tracks || [];
-      out.replaceChildren(rows.length ? h('ul', { class: 'list' }, rows.map((t) => item({
-        title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
-        end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t), heart: trackHeart(t) }))) : msg('empty', 'Nothing found'));
+      out.replaceChildren(rows.length ? h('ul', { class: 'list' }, rows.map((t) => {
+        const hh = trackHeart(t);
+        return item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
+          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), heart: hh, more: trackMore(t, hh) });
+      })) : msg('empty', 'Nothing found'));
     } catch (e) {
       if (my === searchSeq) out.replaceChildren(msg('error', e.message));
     }
@@ -1113,7 +1276,7 @@ if (typeof document !== 'undefined') (function () {
   function route() {
     const r = parseHash(location.hash);
     document.body.dataset.tab = r.tab;
-    closeMenus();
+    closeMenu(false);
     if (r.tab === 'browse') renderBrowse(r.rest);
     if (r.tab === 'favorites') { renderFavorites(); loadFavs(); }
     if (r.tab === 'search') renderProviderChips();

@@ -68,7 +68,7 @@ func intOf(v any) int {
 
 func (f *fakeCliamp) SubmitJob(ctx context.Context, op string, params any) (*ipc.Job, error) {
 	p, _ := params.(map[string]any)
-	if op == "queue" && f.gate != nil {
+	if op == "track.queue" && f.gate != nil {
 		select {
 		case <-f.gate:
 		case <-ctx.Done():
@@ -91,12 +91,13 @@ func (f *fakeCliamp) SubmitJob(ctx context.Context, op string, params any) (*ipc
 		return page(rows, p, "albums")
 	case "queue.clear":
 		f.calls = append(f.calls, "clear")
-	case "queue":
+	case "track.queue":
 		f.queueN++
 		if f.failAt > 0 && f.queueN == f.failAt {
 			return nil, f.failErr
 		}
-		f.calls = append(f.calls, "queue:"+p["path"].(string))
+		tr, _ := p["track"].(map[string]any)
+		f.calls = append(f.calls, "queue:"+tr["path"].(string))
 	case "track.play":
 		tr, _ := p["track"].(map[string]any)
 		f.calls = append(f.calls, "play:"+tr["title"].(string)+"@"+tr["path"].(string))
@@ -161,7 +162,9 @@ func TestTrackPlayClearsThenPlays(t *testing.T) {
 	}
 }
 
-func TestTrackAppendIsOneQueueCall(t *testing.T) {
+// Add to queue keeps the whole track (title, artist, provider metadata): the
+// bare-path append of the live playlist would lose all of it.
+func TestTrackAppendKeepsTheTrackObject(t *testing.T) {
 	f := &fakeCliamp{}
 	s, _, _ := newSvc(f, func(string) bool { return true })
 	run(t, s, Request{Kind: "track", Mode: "append", Track: trk("One", "/m/one.flac")})
@@ -310,6 +313,25 @@ func TestUntrustedTrackPathIsRefusedWithoutAnyCall(t *testing.T) {
 	}
 	if len(f.snapshot()) != 0 {
 		t.Fatalf("no cliamp call may happen: %v", f.snapshot())
+	}
+}
+
+// Radio and podcast results are plain stream URLs with no login in them: they
+// are never scrubbed or "known", yet they must be playable. Only file paths on
+// this machine need the gate.
+func TestPlainStreamURLsAreAllowedButFilePathsAreNot(t *testing.T) {
+	f := &fakeCliamp{}
+	s, _, _ := newSvc(f, func(string) bool { return false })
+	for _, url := range []string{"https://radio.example/live.mp3", "http://stream.example:8000/aac"} {
+		run(t, s, Request{Kind: "track", Mode: "append", Track: trk("Station", url)})
+	}
+	if got := strings.Join(f.snapshot(), " "); got != "queue:https://radio.example/live.mp3 queue:http://stream.example:8000/aac" {
+		t.Fatalf("got %s", got)
+	}
+	for _, p := range []string{"/etc/passwd", "file:///etc/passwd", "../../x.flac", "relative/a.mp3", "ftp://host/a.mp3"} {
+		if err := s.Start(Request{Kind: "track", Mode: "append", Track: trk("x", p)}); !errors.Is(err, ErrUntrusted) {
+			t.Fatalf("%q: want ErrUntrusted, got %v", p, err)
+		}
 	}
 }
 

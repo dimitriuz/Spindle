@@ -1,6 +1,6 @@
 # Item menu ("...") redesign
 
-Date: 2026-11-22. Status: awaiting approval. Requirements agreed in conversation (the "..." on
+Date: 2026-11-22. Status: approved; built with the amendments at the end. Requirements agreed in conversation (the "..." on
 every item, Play = replace queue, Add to queue, a real submenu); "My calls" are proposals.
 
 ## Intent
@@ -106,3 +106,16 @@ Tests must include: enqueue per kind and mode with the fake player (order of cal
 play, cap at 1000 with the right totals, busy -> 409, bad kind, untrusted path refused,
 credentials never in events or errors), SSE events in order, menu keyboard behaviour and
 focus return (browser check), sheet vs popover by viewport, and that every row type has the "...".
+
+## Amendments made while building
+
+- **No 1000-track cap** (requested): everything is added, with progress and a Stop button.
+- **Add to queue uses cliamp's up-next list (`track.queue`), not `queue {path}`.** Probed on the
+  Pi: `queue {path}` adds a bare URL (title = server hostname, no artist/duration/provider
+  metadata, even while playing), `queue {track}` fails and `url.load` is equally bare.
+  `track.queue` keeps the track and is first-in-first-out. Consequence: "Play next" and "Add to
+  queue" would be the same action for a track, so tracks have only Add to queue (queue rows keep
+  Play next, which moves an existing row up next).
+- Plain `http(s)` stream URLs (radio, podcasts) need no gate; only file paths do.
+- The job poll now backs off from 2 ms to 200 ms; the fixed 200 ms made every command, and
+  especially a 12,000-track add, slow.

@@ -1,7 +1,13 @@
 // Package enqueue does the multi-step queue work behind the item menu's
-// "Play" and "Add to queue": clearing the queue and playing, or appending a
+// "Play" and "Add to queue": clearing the queue and playing, or adding a
 // whole album, playlist or artist track by track, in the background and with
 // progress.
+//
+// "Add to queue" goes into cliamp's up-next list (track.queue), in order. The
+// obvious alternative, appending to the end of the live playlist with
+// queue{path}, adds a bare URL: no title, artist, duration or provider
+// metadata, so the entry shows as the server's hostname everywhere and loses
+// its art, favorite and tech info. track.queue keeps the whole track object.
 package enqueue
 
 import (
@@ -9,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -79,9 +86,12 @@ func (s *Service) Start(req Request) error {
 		if req.Track == nil || path == "" {
 			return ErrInvalid
 		}
-		// only stream URLs the bridge handed out, or tracks it knows
+		// Files on this machine only if the bridge was told about them (art and
+		// info use the same rule). Stream URLs are the player's to fetch, as
+		// they always were through /api/command, and radio or podcast URLs
+		// carry no login that could have been scrubbed.
 		orig := s.restore(path)
-		if orig == path && (s.known == nil || !s.known(path)) {
+		if orig == path && !isStreamURL(path) && (s.known == nil || !s.known(path)) {
 			return ErrUntrusted
 		}
 		tr := make(map[string]any, len(req.Track))
@@ -132,6 +142,10 @@ func (s *Service) finish() {
 	}
 	s.mu.Unlock()
 	s.wg.Done()
+}
+
+func isStreamURL(p string) bool {
+	return strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://")
 }
 
 var urlRe = regexp.MustCompile(`https?://\S+`)
@@ -189,7 +203,7 @@ func (s *Service) work(ctx context.Context, req Request) {
 		return
 	case req.Kind == "track":
 		total = 1
-		if err := op("queue", map[string]any{"path": req.Track["path"]}); err != nil {
+		if err := op("track.queue", map[string]any{"track": req.Track}); err != nil {
 			fail(err)
 			return
 		}
@@ -242,7 +256,7 @@ func (s *Service) work(ctx context.Context, req Request) {
 			return
 		}
 		if path, _ := t["path"].(string); path != "" {
-			if err := op("queue", map[string]any{"path": path}); err != nil {
+			if err := op("track.queue", map[string]any{"track": t}); err != nil {
 				fail(err)
 				return
 			}

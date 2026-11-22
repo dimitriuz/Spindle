@@ -12,10 +12,15 @@ import (
 // treated as the protocol violation it is.
 var ErrNoJob = errors.New("reply carried no job")
 
-// jobPoll is how often a non-final job is re-read with job.get. 200 ms keeps a
-// command well inside the browser's 10 s budget without leaning on the daemon
-// while a job is running.
-const jobPoll = 200 * time.Millisecond
+// A job that is not final yet is re-read with job.get. Most operations finish
+// within milliseconds, so the first polls come quickly and then back off to
+// jobPollMax: a long job (a big playlist load) is not hammered, a quick one
+// (queue, toggle) is not left waiting. 200 ms stays well inside the browser's
+// 10 s command budget.
+const (
+	jobPollMin = 2 * time.Millisecond
+	jobPollMax = 200 * time.Millisecond
+)
 
 // terminal lists the job states after which cliamp will never change its
 // answer, so polling has to stop.
@@ -42,8 +47,12 @@ func (c *Conn) SubmitJob(ctx context.Context, op string, params any) (*Job, erro
 	if job == nil {
 		return nil, fmt.Errorf("operation.submit %s: %w", op, ErrNoJob)
 	}
+	wait := jobPollMin
 	for !terminal[job.State] {
-		t := time.NewTimer(jobPoll)
+		t := time.NewTimer(wait)
+		if wait *= 2; wait > jobPollMax {
+			wait = jobPollMax
+		}
 		select {
 		case <-ctx.Done():
 			t.Stop()

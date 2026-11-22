@@ -557,12 +557,12 @@ appended:
 	}
 	queued := 0
 	for _, c := range f.Calls() {
-		if c == "queue" {
+		if c == "track.queue" {
 			queued++
 		}
 	}
 	if queued != 7 {
-		t.Fatalf("7 queue calls, got %d (%v)", queued, f.Calls())
+		t.Fatalf("7 track.queue calls, got %d (%v)", queued, f.Calls())
 	}
 
 	// Play on a track the player knows: clear, then play

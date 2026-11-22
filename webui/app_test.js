@@ -217,6 +217,86 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.albumKey(null), '');
   });
 
+  await ok('rowActions: the menu of every kind of item', () => {
+    const ids = (spec) => A.rowActions(spec).map((a) => a.id);
+    assert.deepEqual(ids({ kind: 'track', fav: false }), ['play', 'add', 'fav'], 'Add to queue is cliamp up-next, so there is no separate Play next');
+    assert.deepEqual(ids({ kind: 'album', fav: false }), ['play', 'add', 'fav']);
+    assert.deepEqual(ids({ kind: 'playlist', fav: true }), ['play', 'add', 'fav']);
+    assert.deepEqual(ids({ kind: 'artist', fav: false }), ['play', 'add', 'fav'], 'artists have a menu too');
+    assert.deepEqual(ids({ kind: 'radio', fav: false }), ['play', 'fav'], 'a station can only be played');
+    assert.deepEqual(ids({ kind: 'queue', index: 2, count: 5 }), ['playfrom', 'next', 'up', 'down', 'remove']);
+    assert.deepEqual(ids({ kind: 'playnext', index: 0, count: 2 }), ['up', 'down', 'remove']);
+    assert.deepEqual(ids({ kind: 'track' }), ['play', 'add'], 'no favorite entry where favorites are not supported');
+    assert.deepEqual(A.rowActions({ kind: 'nonsense' }), []);
+    const play = A.rowActions({ kind: 'album', fav: false })[0];
+    assert.equal(play.label, 'Play', 'one action, one name: no separate Play now / Replace queue');
+    assert.ok(!A.rowActions({ kind: 'track', fav: false }).some((a) => /replace/i.test(a.label)));
+  });
+
+  await ok('rowActions: favorite label, disabled edges, danger', () => {
+    assert.equal(A.rowActions({ kind: 'album', fav: false }).find((a) => a.id === 'fav').label, 'Favorite');
+    assert.equal(A.rowActions({ kind: 'album', fav: true }).find((a) => a.id === 'fav').label, 'Remove from favorites');
+    const top = A.rowActions({ kind: 'queue', index: 0, count: 3 });
+    assert.equal(top.find((a) => a.id === 'up').disabled, true, 'cannot move the first row up');
+    assert.ok(!top.find((a) => a.id === 'down').disabled);
+    const bottom = A.rowActions({ kind: 'queue', index: 2, count: 3 });
+    assert.equal(bottom.find((a) => a.id === 'down').disabled, true);
+    assert.equal(A.rowActions({ kind: 'queue', index: 0, count: 1 }).filter((a) => a.disabled).length, 2, 'a single row cannot move either way');
+    assert.equal(top.find((a) => a.id === 'remove').danger, true);
+    assert.ok(!A.rowActions({ kind: 'track', fav: false }).some((a) => a.danger));
+    assert.ok(A.rowActions({ kind: 'track', fav: false }).every((a) => a.icon && a.label));
+  });
+
+  await ok('menuMode: sheet on narrow or touch screens, popover otherwise', () => {
+    assert.equal(A.menuMode(599, false), 'sheet');
+    assert.equal(A.menuMode(600, false), 'popover');
+    assert.equal(A.menuMode(1200, true), 'sheet', 'a coarse pointer always gets the sheet');
+    assert.equal(A.menuMode(402, true), 'sheet');
+  });
+
+  await ok('menuPlacement keeps the popover on screen', () => {
+    const view = { width: 1000, height: 700 }, size = { width: 240, height: 200 };
+    const mid = A.menuPlacement({ left: 500, top: 100, width: 44, height: 44 }, size, view);
+    assert.equal(mid.flipped, false);
+    assert.equal(mid.top, 148, 'just under the button');
+    assert.equal(mid.left, 500 + 44 - 240, 'right edges aligned');
+    const low = A.menuPlacement({ left: 500, top: 640, width: 44, height: 44 }, size, view);
+    assert.equal(low.flipped, true, 'no room below: opens upward');
+    assert.equal(low.top, 640 - 200 - 4);
+    const right = A.menuPlacement({ left: 990, top: 100, width: 44, height: 44 }, size, view);
+    assert.ok(right.left + size.width <= view.width - 8, 'never past the right edge');
+    const left = A.menuPlacement({ left: 0, top: 100, width: 44, height: 44 }, size, view);
+    assert.ok(left.left >= 8, 'never past the left edge');
+    const tiny = A.menuPlacement({ left: 10, top: 300, width: 44, height: 44 }, { width: 240, height: 900 }, view);
+    assert.ok(tiny.top >= 8, 'a menu taller than the window still starts on screen');
+  });
+
+  await ok('menuKey: roving focus that wraps and skips disabled items', () => {
+    assert.equal(A.menuKey(-1, 4, 'ArrowDown'), 0);
+    assert.equal(A.menuKey(3, 4, 'ArrowDown'), 0, 'wraps');
+    assert.equal(A.menuKey(0, 4, 'ArrowUp'), 3, 'wraps');
+    assert.equal(A.menuKey(-1, 4, 'ArrowUp'), 3);
+    assert.equal(A.menuKey(2, 4, 'Home'), 0);
+    assert.equal(A.menuKey(1, 4, 'End'), 3);
+    assert.equal(A.menuKey(1, 4, 'x'), 1, 'other keys leave it');
+    assert.equal(A.menuKey(0, 0, 'ArrowDown'), -1, 'empty menu');
+    assert.equal(A.menuKey(0, 1, 'ArrowDown'), 0);
+    assert.equal(A.menuKey(0, 4, 'ArrowDown', [false, true, true, false]), 3, 'skips disabled');
+    assert.equal(A.menuKey(3, 4, 'ArrowUp', [false, true, true, false]), 0);
+    assert.equal(A.menuKey(0, 2, 'ArrowDown', [true, true]), 0, 'all disabled: stay');
+  });
+
+  await ok('progressText says what the background add is doing', () => {
+    assert.equal(A.progressText({ state: 'running', done: 340, total: 12323 }, 'append'), 'Adding 340 / 12,323…');
+    assert.equal(A.progressText({ state: 'running', done: 0, total: 0 }, 'append'), 'Adding…');
+    assert.equal(A.progressText({ state: 'done', done: 12323, total: 12323 }, 'append'), 'Added 12,323 tracks');
+    assert.equal(A.progressText({ state: 'done', done: 1, total: 1 }, 'append'), 'Added 1 track');
+    assert.equal(A.progressText({ state: 'done', done: 1, total: 1 }, 'play'), 'Playing');
+    assert.equal(A.progressText({ state: 'cancelled', done: 340, total: 12323 }, 'append'), 'Stopped at 340 of 12,323');
+    assert.equal(A.progressText({ state: 'failed', done: 3, total: 9, error: 'navidrome: down' }, 'append'), 'Could not add: navidrome: down');
+    assert.equal(A.progressText({ state: 'failed', done: 0, total: 0 }, 'play'), 'Could not play: unknown error');
+  });
+
   await ok('favorite keys cover all five kinds', () => {
     assert.equal(A.favKey('album', 'navidrome', 'al1'), 'album:navidrome:al1');
     assert.equal(A.favKey('artist', 'navidrome', 'ar1'), 'artist:navidrome:ar1');
