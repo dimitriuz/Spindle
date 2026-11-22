@@ -289,10 +289,21 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(names({ q: 'a · 20' }), 'Album 2', 'the text filter reads title and subtitle, ignoring case');
     assert.equal(names({ q: 'zzz' }), '');
     const al = A.LIST_VIEWS.albums;
-    assert.deepEqual(al.facets.map((f) => f.id), ['artist', 'genre', 'decade']);
+    assert.deepEqual(al.facets.map((f) => f.id), ['artist', 'genre', 'decade', 'language']);
     assert.equal(names({ facets: { decade: '1990s' } }, al), 'Album 10');
-    assert.deepEqual(A.ALBUM_ORDERS[0], ['', 'Default order']);
+    assert.deepEqual(A.ALBUM_ORDERS[0], ['', 'All albums']);
     assert.ok(A.ALBUM_ORDERS.every(([v]) => /^[A-Za-z]*$/.test(v)), 'orders are plain words the bridge accepts');
+  });
+  await ok('script of a name', () => {
+    assert.equal(A.scriptOf('Аквариум'), 'Cyrillic');
+    assert.equal(A.scriptOf('Ride the Lightning Metallica'), 'Latin');
+    assert.equal(A.scriptOf('Земфира Zemfira'), 'Cyrillic', 'the larger alphabet wins');
+    assert.equal(A.scriptOf('椎名林檎'), 'Chinese');
+    assert.equal(A.scriptOf('きのこ帝国'), 'Japanese');
+    assert.equal(A.scriptOf('1984 !!!'), '');
+    assert.equal(A.scriptOf(null), '');
+    assert.ok(A.LIST_VIEWS.albums.sorts.some((x) => x.id === 'new' && /year/i.test(x.label)), 'albums sort by release year');
+    assert.ok(A.LIST_VIEWS.albums.facets.some((f) => f.id === 'language'));
   });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
