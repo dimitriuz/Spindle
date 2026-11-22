@@ -2,7 +2,7 @@
 local p = plugin.register({
     name        = "spindle",
     type        = "hook",
-    version     = "0.1.0",
+    version     = "0.2.0",
     description = "LAN web interface (spawns the spindle bridge)",
     permissions = {"exec"},
 })
