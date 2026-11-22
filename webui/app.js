@@ -104,6 +104,15 @@ function placeholderStyle(name) {
 const itemArtUrl = (kind, provider, id) => (provider === 'navidrome' && id && ['album', 'artist', 'playlist'].includes(kind)
   ? '/api/art/item?provider=navidrome&kind=' + kind + '&id=' + encodeURIComponent(id) : '');
 const folderArtUrl = (rel) => '/api/files/art?path=' + encodeURIComponent(rel);
+// albumFacts: what an album page says about itself, from its tracks (year and genre of
+// the first track that has one; length is the sum of the known durations)
+const albumFacts = (tracks) => {
+  const ts = tracks || [], first = (k) => { const t = ts.find((x) => x && x[k]); return t ? t[k] : ''; };
+  const secs = ts.reduce((a, t) => a + (Number(t && t.duration_secs) || 0), 0);
+  return { name: first('album'), artist: first('artist'), year: first('year') || '', genre: first('genre'), count: ts.length, secs };
+};
+// albumFactsLine: 'Metal · 1987 · 5 tracks · 21 min'
+const albumFactsLine = (f) => [f.genre, f.year, f.count ? plural(f.count, 'track') : '', f.secs ? (f.secs >= 3600 ? Math.floor(f.secs / 3600) + ' h ' + Math.round((f.secs % 3600) / 60) + ' min' : Math.max(1, Math.round(f.secs / 60)) + ' min') : ''].filter(Boolean).join(' · ');
 // nextChunk: how many more rows of an already loaded list to draw
 const nextChunk = (total, shown, size) => Math.max(0, Math.min(size, total - shown));
 
@@ -339,7 +348,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, viewModeKey, placeholderStyle, itemArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, viewModeKey, albumFacts, albumFactsLine, placeholderStyle, itemArtUrl, folderArtUrl, nextChunk, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -924,6 +933,12 @@ if (typeof document !== 'undefined') (function () {
       act.append(mb.trigger);
     }
     if (act.children.length) li.append(act);
+    // hover (or keyboard focus) offers Play and Open without leaving the list
+    if (o.onPlay) {
+      const play = h('button', { class: 'tplay', 'aria-label': 'Play ' + (o.title || ''), onclick: (e) => { e.preventDefault(); e.stopPropagation(); o.onPlay(); } });
+      play.append(svg('play'));
+      li.append(h('div', { class: 'thover' }, play, o.href ? h('a', { class: 'topen', href: o.href }, 'Open') : null));
+    }
     return li;
   }
 
@@ -932,7 +947,7 @@ if (typeof document !== 'undefined') (function () {
   // size of the page it returned), so a list is finished when a page comes back short.
   const PAGE = 50;
   const pageDone = (n) => n < PAGE;
-  const getViewMode = (key) => { try { return localStorage.getItem(key) === 'tiles' ? 'tiles' : 'list'; } catch (e) { return 'list'; } };
+  const getViewMode = (key) => { try { return localStorage.getItem(key) === 'list' ? 'list' : 'tiles'; } catch (e) { return 'tiles'; } };
   const saveViewMode = (key, m) => { try { localStorage.setItem(key, m); } catch (e) { /* storage may be off */ } };
   // chunkPage pages through a list that is already loaded (a folder, the favorites)
   const chunkPage = (get, size = 120) => {
@@ -1371,7 +1386,8 @@ if (typeof document !== 'undefined') (function () {
     const drillBase = '#browse/' + enc(prov) + '/' + kind + '/';
     const coll = (k, href, sub, end, tkind) => {
       const hh = heartBtn({ key: favKey(k, prov, row.id), req: { kind: k, provider: prov, id: row.id, title: name, subtitle: k === 'artist' ? '' : (row.artist || '') } });
-      return { title: name, sub, end, href, tkind, art: itemArtUrl(k, prov, row.id), heart: hh, more: collectionMore(k, prov, row.id, hh) };
+      return { title: name, sub, end, href, tkind, art: itemArtUrl(k, prov, row.id), heart: hh, more: collectionMore(k, prov, row.id, hh),
+        onPlay: k === 'album' ? () => enq({ kind: 'album', provider: prov, id: row.id, mode: 'play' }) : null };
     };
     if (kind === 'playlists') {
       return coll('playlist', drillBase + 'playlist/' + enc(row.id || ''), row.artist || '', row.track_count != null ? plural(row.track_count, 'track') : '', 'queue');
@@ -1456,6 +1472,15 @@ if (typeof document !== 'undefined') (function () {
     const hreq = { kind: what, provider: prov, id, title: '', subtitle: '' };
     const hheart = what === 'playlist' ? null : heartBtn({ key: favKey(what, prov, id), req: hreq });
     let first = true;
+    const seen = [];
+    const info = what === 'album' ? h('div', { class: 'ainfo' }) : null;
+    const paintInfo = () => {
+      const f = albumFacts(seen);
+      info.replaceChildren(
+        h('div', { class: 'acover' }, h('span', { class: 'ph2' }, svg('album')), h('img', { alt: '', src: itemArtUrl('album', prov, id), onerror: (e) => e.target.remove() })),
+        h('div', { class: 'afacts' }, h('div', { class: 'aname' }, f.name || ''), f.artist ? h('div', { class: 'aartist' }, f.artist) : null,
+          h('div', { class: 'ameta dim' }, albumFactsLine(f))));
+    };
     const col = collection({ my, key: viewModeKey('browse', prov, 'artist-albums'), modes: isArtist, empty: isArtist ? 'No albums' : 'No tracks',
       page: async () => {
         const r = await api.get(url(off));
@@ -1465,6 +1490,7 @@ if (typeof document !== 'undefined') (function () {
           if (what === 'album') { hreq.title = rows[0].album || ''; hreq.subtitle = rows[0].artist || ''; }
           if (isArtist) hreq.title = rows[0].artist || '';
         }
+        if (info) { seen.push(...rows); paintInfo(); }
         off += rows.length;
         return { rows, done: pageDone(rows.length) };
       },
@@ -1473,7 +1499,7 @@ if (typeof document !== 'undefined') (function () {
     const actions = h('div', { class: 'hdr-actions' }, hheart,
       h('button', { class: 'btn primary', onclick: () => go('play') }, '▶ Play'),
       h('button', { class: 'btn', onclick: () => go('append') }, '+ Add'));
-    show(head(title, back, actions), listBar(col.toggle), ...col.body);
+    show(head(title, back, actions), info, listBar(col.toggle), ...col.body);
     col.start();
   }
 

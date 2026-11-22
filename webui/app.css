@@ -256,3 +256,25 @@ li.played .t1, li.played .t2, li.played .end { color: var(--dim); opacity: .55; 
   .cover { width: min(100%, 360px); }
   .sheet { left: 420px; max-height: 60dvh; }
 }
+
+/* Album tile: Play and Open appear on hover or keyboard focus (pointer devices only) */
+.thover { position: absolute; top: 0; left: 0; right: 0; aspect-ratio: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border-radius: 12px; background: rgba(0,0,0,.42); pointer-events: none; }
+.thover > * { pointer-events: auto; }
+.tplay { width: 64px; height: 64px; border-radius: 50%; border: 0; background: var(--accent); color: #06232f; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+.tplay svg { width: 34px; height: 34px; }
+.tplay:hover { transform: scale(1.06); }
+.topen { padding: 6px 16px; border-radius: 16px; font-size: 13px; color: #fff; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35); text-decoration: none; }
+.topen:hover { background: rgba(255,255,255,.3); }
+@media (hover: hover) { .tile2:hover .thover { display: flex; } }
+.tile2:focus-within .thover { display: flex; }
+.tile2:hover .tact, .tile2:focus-within .tact { z-index: 2; }
+
+/* Album page header */
+.ainfo { display: flex; gap: 16px; align-items: flex-end; margin: 4px 0 14px; }
+.acover { position: relative; flex: 0 0 auto; width: min(42vw, 180px); aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--panel); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+.acover .ph2 { width: 36%; height: 36%; color: var(--dim); display: inline-flex; }
+.acover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.afacts { min-width: 0; }
+.aname { font-size: 20px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.aartist { font-size: 15px; margin-top: 4px; }
+.ameta { font-size: 13px; margin-top: 6px; }

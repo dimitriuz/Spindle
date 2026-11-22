@@ -244,6 +244,15 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.nextChunk(3, 0, 120), 3);
   });
 
+  await ok('albumFacts and its line', () => {
+    const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
+    assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);
+    assert.equal(A.albumFactsLine(f), 'Metal · 1987 · 2 tracks · 13 min');
+    assert.equal(A.albumFactsLine(A.albumFacts([])), '');
+    assert.equal(A.albumFacts(null).count, 0);
+    assert.equal(A.albumFactsLine({ count: 1, secs: 4000 }), '1 track · 1 h 7 min');
+  });
+
   await ok('file browser helpers: paths, hashes, parents, filter', () => {
     assert.equal(A.filesRel('', 'Classic'), 'Classic');
     assert.equal(A.filesRel('Classic/Vivaldi', 'Four Seasons 01.flac'), 'Classic/Vivaldi/Four Seasons 01.flac');
