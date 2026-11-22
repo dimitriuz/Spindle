@@ -217,6 +217,36 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.albumKey(null), '');
   });
 
+  await ok('file browser helpers: paths, hashes, parents, filter', () => {
+    assert.equal(A.filesRel('', 'Classic'), 'Classic');
+    assert.equal(A.filesRel('Classic/Vivaldi', 'Four Seasons 01.flac'), 'Classic/Vivaldi/Four Seasons 01.flac');
+    assert.equal(A.filesHash(''), '#browse/files');
+    assert.equal(A.filesHash('Classic/A B'), '#browse/files/Classic%2FA%20B');
+    assert.equal(A.filesHash('a#b?c%d/日本'), '#browse/files/a%23b%3Fc%25d%2F%E6%97%A5%E6%9C%AC');
+    assert.equal(A.filesParent(''), null, 'the root has no parent');
+    assert.equal(A.filesParent('Classic'), '');
+    assert.equal(A.filesParent('Classic/Vivaldi/Seasons'), 'Classic/Vivaldi');
+    const entries = [{ name: 'Vivaldi', dir: true }, { name: 'four seasons.flac' }, { name: 'BEETHOVEN', dir: true }];
+    assert.deepEqual(A.filterEntries(entries, '  SEAS ').map((e) => e.name), ['four seasons.flac']);
+    assert.deepEqual(A.filterEntries(entries, 'v').map((e) => e.name), ['Vivaldi', 'BEETHOVEN'], 'case-insensitive substring');
+    assert.equal(A.filterEntries(entries, '').length, 3);
+    assert.equal(A.filterEntries(entries, '   ').length, 3);
+    assert.deepEqual(A.filterEntries(entries, 'zzz'), []);
+    assert.deepEqual(A.filterEntries(null, 'x'), []);
+    // a folder link survives the hash round trip, whatever the folder is called
+    for (const rel of ['Classic/A B', 'a#b?c%d/日本', 'x/y%2Fz', 'Rock/AC&DC [live]/01 - T.N.T.']) {
+      const parsed = A.parseHash(A.filesHash(rel));
+      assert.equal(parsed.tab, 'browse');
+      assert.deepEqual(A.splitPath(parsed.rest), ['files', rel]);
+    }
+    assert.deepEqual(A.splitPath(A.parseHash('#browse/files').rest), ['files']);
+  });
+
+  await ok('rowActions: files and folders have Play and Add to queue', () => {
+    assert.deepEqual(A.rowActions({ kind: 'file' }).map((a) => a.id), ['play', 'add']);
+    assert.deepEqual(A.rowActions({ kind: 'folder' }).map((a) => a.id), ['play', 'add']);
+  });
+
   await ok('queueView: one list in play order, played items first', () => {
     const rows = ['a', 'b', 'c', 'd', 'e'].map((title) => ({ title }));
     const view = (st, q) => A.queueView(st, q).map((r) => r.title + ':' + r.status);

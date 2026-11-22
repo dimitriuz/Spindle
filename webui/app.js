@@ -93,6 +93,16 @@ function techLine(info) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// ---- file browser ----
+// Paths are relative to the music root; a folder's place is one encoded hash segment.
+const filesRel = (parent, name) => (parent ? parent + '/' + name : name);
+const filesHash = (rel) => (rel ? '#browse/files/' + encodeURIComponent(rel) : '#browse/files');
+const filesParent = (rel) => (rel === '' ? null : rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '');
+function filterEntries(entries, q) {
+  const needle = String(q || '').trim().toLowerCase();
+  return (entries || []).filter((e) => !needle || e.name.toLowerCase().includes(needle));
+}
+
 // ---- queue view ----
 // queueView turns cliamp's two lists into the one the page shows, in play
 // order. The live playlist holds every track; the up-next list holds references
@@ -140,6 +150,7 @@ function rowActions(spec) {
     case 'track': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add'), ...fav];
     case 'album': case 'playlist': case 'artist': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add'), ...fav];
     case 'radio': return [A('play', 'Play', 'play'), ...fav];
+    case 'file': case 'folder': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add')];
     case 'queue': {
       const st = spec.status, acts = [];
       if (st !== 'current') acts.push(A('playfrom', 'Play from here', 'play'));
@@ -314,7 +325,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, filesRel, filesHash, filesParent, filterEntries, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -341,6 +352,7 @@ if (typeof document !== 'undefined') (function () {
     up: 'M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z',
     down: 'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z',
     trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+    folder: 'M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
     heart: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
     heartfill: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
     back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
@@ -840,6 +852,7 @@ if (typeof document !== 'undefined') (function () {
     const li = h('li', { class: o.cur ? 'cur' : null });
     const inner = [h('div', { class: 'txt' }, h('div', { class: 't1' }, o.title || ''), o.sub ? h('div', { class: 't2' }, o.sub) : null)];
     if (o.end) inner.push(h('div', { class: 'end' }, o.end));
+    if (o.icon) inner.unshift(h('span', { class: 'lead' }, o.icon));
     // every item has the same "..." menu; right-click opens it too
     let trigger = null;
     const open = () => {
@@ -1169,11 +1182,14 @@ if (typeof document !== 'undefined') (function () {
     if (p[0] === '' || p[0] === 'home') {
       const ps = await loadProviders();
       if (!ps) { show(head('Browse'), msg('error', 'no providers')); return; }
-      show(head('Browse'), h('div', { class: 'tiles' }, ps.map((pr) =>
-        h('a', { class: 'tile', href: '#browse/' + enc(pr.key) + '/playlists' }, pr.name,
-          h('span', null, kindsOf(pr).map((k) => k[1]).join(' · '))))));
+      const fname = await filesRoot();
+      show(head('Browse'), h('div', { class: 'tiles' },
+        ps.map((pr) => h('a', { class: 'tile', href: '#browse/' + enc(pr.key) + '/playlists' }, pr.name,
+          h('span', null, kindsOf(pr).map((k) => k[1]).join(' · ')))),
+        fname ? h('a', { class: 'tile', href: filesHash('') }, 'Files', h('span', null, fname)) : null));
       return;
     }
+    if (p[0] === 'files') { await renderFiles(my, show, p[1] || ''); return; }
     const prov = p[0];
     const ps = await loadProviders();
     const info = (ps || []).find((x) => x.key === prov);
@@ -1226,6 +1242,51 @@ if (typeof document !== 'undefined') (function () {
     return item({ title: name, sub: row.genre || '', heart: hh, more: radioMore(prov, row.id, hh),
       onTap: () => { cmd('provider.load', { provider: prov, playlist: row.id }, true); rev(); } });
   }
+  // ---- Files: the music folder cliamp's own file browser starts in ----
+  let filesName;
+  async function filesRoot() {
+    if (filesName === undefined) {
+      try { filesName = (await api.get('/api/files/root')).name; } catch (e) { filesName = null; } // 404: the feature is off
+    }
+    return filesName;
+  }
+  async function renderFiles(my, show, rel) {
+    let l;
+    try { l = await api.get('/api/files?path=' + enc(rel)); }
+    catch (e) {
+      show(head('Files', '#browse'), msg('error', e.status === 404 ? 'That folder is not there any more' : e.status === 400 ? 'That is not a folder in the music library' : (e.message || 'Could not read the folder')));
+      return;
+    }
+    if (my !== nav) return;
+    const parent = filesParent(l.path);
+    const kindOf = (e) => (e.dir ? 'folder' : 'file');
+    const go = (kind, id, mode) => enq({ kind, provider: 'files', id, mode });
+    const row = (e) => {
+      const id = filesRel(l.path, e.name);
+      return item({
+        title: e.name, icon: svg(e.dir ? 'folder' : 'note'),
+        href: e.dir ? filesHash(id) : null,
+        onTap: e.dir ? null : () => go('file', id, 'play'),
+        more: () => ({ spec: { kind: kindOf(e) }, run: { play: () => go(kindOf(e), id, 'play'), add: () => go(kindOf(e), id, 'append') } }),
+      });
+    };
+    const ul = h('ul', { class: 'list' });
+    const filter = h('input', { type: 'search', class: 'filter', placeholder: 'Filter this folder', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Filter this folder' });
+    const draw = () => {
+      const es = filterEntries(l.entries, filter.value);
+      ul.replaceChildren(...(es.length ? es.map(row) : [msg('empty', l.entries.length ? 'Nothing matches' : 'No folders or audio files here')]));
+    };
+    filter.addEventListener('input', draw);
+    // the whole folder (everything below it); not offered for the library root
+    const actions = l.path && l.entries.length ? h('div', { class: 'hdr-actions' },
+      h('button', { class: 'btn primary', onclick: () => go('folder', l.path, 'play') }, '▶ Play'),
+      h('button', { class: 'btn', onclick: () => go('folder', l.path, 'append') }, '+ Add')) : null;
+    draw();
+    show(head(l.name || 'Files', parent === null ? '#browse' : filesHash(parent), actions),
+      l.path ? h('div', { class: 'crumb dim' }, l.path.split('/').join(' › ')) : null,
+      l.entries.length > 8 ? filter : null, ul);
+  }
+
   async function renderDrill(my, show, hdr, prov, what, id, backKind) {
     // an artist drills into its albums (each opens the album page); album and
     // playlist drill into tracks

@@ -80,6 +80,23 @@ Pictures are fetched once and cached under `<data-dir>/art/` (200 MB cap, least
 recently used removed first). The bridge only ever contacts the Navidrome host
 named in the track's own stream URL; nothing goes to outside services.
 
+## Files
+
+The **Files** tile in Browse is a file browser over the music folder cliamp's own
+browser starts in (`initial_directory` in cliamp's `config.toml`, else `~/Music`;
+override with `cliamp-web serve --music-dir DIR`). cliamp has no operation for
+listing folders, so the bridge, which runs on the same machine, does it.
+
+- Folders first, then audio files (`flac mp3 m4a aac ogg opus wav wma aiff ape wv
+  mka alac`), in natural order (`Track 2` before `Track 10`); a filter box appears
+  in long folders.
+- **Play** and **Add to queue** work on a folder (everything below it, in order,
+  with progress and Stop) and on a single file. cliamp reads the tags itself, so
+  the tracks are complete in the queue.
+- It is read-only and confined to the music folder: `..`, absolute paths and
+  symlinks that lead out of it are refused, and the page never sees absolute paths.
+  If the folder is missing the tile is simply not shown.
+
 ## Item menu
 
 Every list item has a "..." menu (right-click works too). On a narrow or touch
