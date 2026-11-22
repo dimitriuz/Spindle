@@ -12,6 +12,9 @@ import (
 	"cliamp-web/internal/ipc"
 )
 
+// writeTimeout bounds one SSE write.
+const writeTimeout = 10 * time.Second
+
 // queue serves the cached live playlist.
 func (s *serverState) queue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.cfg.Cache.Queue())
@@ -37,9 +40,13 @@ func (s *serverState) health(w http.ResponseWriter, r *http.Request) {
 
 // writeJSON is the single JSON response path for every data endpoint.
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		b, status = []byte(`{"error":"encode failed","code":"internal_error"}`), http.StatusInternalServerError
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(append(urls.Scrub(b), '\n'))
 }
 
 // state serves the cached runtime snapshot (never proxies to cliamp).
@@ -49,7 +56,7 @@ func (s *serverState) state(w http.ResponseWriter, r *http.Request) {
 
 // command forwards one operation to cliamp and waits for the job.
 func (s *serverState) command(w http.ResponseWriter, r *http.Request) {
-	if s.cfg.Limiter != nil && !s.cfg.Limiter.Allow(r.RemoteAddr) {
+	if s.cfg.Limiter != nil && !s.cfg.Limiter.Allow(clientKey(r.RemoteAddr)) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "rate_limited", "code": "rate_limited"})
 		return
 	}
@@ -61,6 +68,19 @@ func (s *serverState) command(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
 		return
 	}
+	if !allowedOps[req.Op] {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "operation not allowed: " + req.Op, "code": "forbidden_operation"})
+		return
+	}
+	// the browser only ever sees scrubbed stream URLs; cliamp needs the real one
+	switch t := req.Params["track"].(type) {
+	case map[string]any: // the shape cliamp wants: a track object
+		if p, ok := t["path"].(string); ok {
+			t["path"] = urls.Restore(p)
+		}
+	case string:
+		req.Params["track"] = urls.Restore(t)
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	job, err := s.cfg.Runner.SubmitJob(ctx, req.Op, req.Params)
@@ -68,6 +88,15 @@ func (s *serverState) command(w http.ResponseWriter, r *http.Request) {
 		code := "internal_error"
 		var ie *ipc.IPCError
 		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			// the op may still be running inside cliamp: say so, with the job
+			// when we have one, instead of reporting a plain failure
+			out := map[string]any{"error": "job_timeout", "code": "job_timeout"}
+			if job != nil {
+				out["job"] = job
+			}
+			writeJSON(w, http.StatusGatewayTimeout, out)
+			return
 		case errors.As(err, &ie):
 			code = ie.Code
 		case errors.Is(err, ipc.ErrNotConnected):
@@ -77,6 +106,19 @@ func (s *serverState) command(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"job": job})
+}
+
+// allowedOps is every operation the web UI issues. cliamp's capability list
+// holds far more (plugin.call runs plugin Lua, url.load fetches arbitrary
+// URLs, history.clear and playlist.delete destroy data); with no login in
+// front of the bridge those stay unreachable from the network.
+var allowedOps = map[string]bool{
+	"play": true, "pause": true, "stop": true, "toggle": true, "next": true, "prev": true,
+	"seek.absolute": true, "volume": true, "shuffle": true, "repeat": true,
+	"track.play": true, "track.queue": true,
+	"queue.play": true, "queue.remove": true, "queue.clear": true, "queue.move": true,
+	"playnext.remove": true, "playnext.move": true,
+	"provider.load": true, "provider.load_album": true,
 }
 
 func statusForCode(code string) int {
@@ -115,25 +157,41 @@ func (s *serverState) events(w http.ResponseWriter, r *http.Request) {
 		status = "online"
 	}
 	fmt.Fprintf(w, "event: player\ndata: {\"status\":%q}\n\n", status)
-	fmt.Fprintf(w, "event: state\ndata: %s\n\n", s.cfg.Cache.State())
+	fmt.Fprintf(w, "event: state\ndata: %s\n\n", urls.Scrub(s.cfg.Cache.State()))
 	flusher.Flush()
 
 	hb := time.NewTicker(s.cfg.heartbeat())
 	defer hb.Stop()
+	rc := http.NewResponseController(w)
+	// every write must finish promptly: a phone that vanished without a FIN
+	// would otherwise pin this goroutine until TCP gives up
+	arm := func() { _ = rc.SetWriteDeadline(time.Now().Add(writeTimeout)) }
+	flush := func() bool {
+		arm()
+		if s.cfg.Hub.TakeDropped(id) {
+			fmt.Fprint(w, "event: resync\ndata: {}\n\n")
+		}
+		return rc.Flush() == nil
+	}
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case <-hb.C:
-			fmt.Fprint(w, ": ping\n\n")
+			arm()
 			fmt.Fprint(w, "event: ping\ndata: {}\n\n")
-			flusher.Flush()
+			if !flush() {
+				return
+			}
 		case f, open := <-ch:
 			if !open {
 				return
 			}
+			arm()
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", f.Name, f.Data)
-			flusher.Flush()
+			if !flush() {
+				return
+			}
 		}
 	}
 }

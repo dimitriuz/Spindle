@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"encoding/json"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -23,6 +24,7 @@ type Cache struct {
 	queue Queue
 	caps  json.RawMessage
 	plRev int64
+	rev   int64 // revision of the cached runtime snapshot; older ones are dropped
 
 	online atomic.Bool
 }
@@ -81,14 +83,32 @@ func (c *Cache) SetState(raw json.RawMessage) {
 	if len(raw) == 0 {
 		return
 	}
-	c.mu.Lock()
-	c.state = raw
 	var s struct {
+		Revision         int64 `json:"revision"`
 		PlaylistRevision int64 `json:"playlist_revision"`
 	}
-	if json.Unmarshal(raw, &s) == nil && s.PlaylistRevision != 0 {
+	_ = json.Unmarshal(raw, &s)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// state.get replies race the event stream; never let an older snapshot
+	// replace a newer one.
+	if s.Revision != 0 && s.Revision < c.rev {
+		return
+	}
+	if s.Revision != 0 {
+		c.rev = s.Revision
+	}
+	c.state = raw
+	if s.PlaylistRevision != 0 {
 		c.plRev = s.PlaylistRevision
 	}
+}
+
+// ResetRevision forgets the snapshot revision so a restarted player (whose
+// counter starts over) is not mistaken for stale.
+func (c *Cache) ResetRevision() {
+	c.mu.Lock()
+	c.rev = 0
 	c.mu.Unlock()
 }
 
@@ -101,6 +121,13 @@ func (c *Cache) mergePlayback(raw json.RawMessage) {
 	if json.Unmarshal(raw, &patch) != nil || len(patch) == 0 {
 		return
 	}
+	var tick struct {
+		Revision int64 `json:"revision"`
+	}
+	_ = json.Unmarshal(raw, &tick)
+	if tick.Revision != 0 && tick.Revision < c.rev {
+		return // older than what we hold: never let it roll the state back
+	}
 	var cur map[string]json.RawMessage
 	if json.Unmarshal(c.state, &cur) != nil {
 		cur = map[string]json.RawMessage{}
@@ -110,6 +137,10 @@ func (c *Cache) mergePlayback(raw json.RawMessage) {
 	}
 	if out, err := json.Marshal(cur); err == nil {
 		c.state = out
+		// a tick that carries a revision is as new as a full snapshot
+		if tick.Revision > c.rev {
+			c.rev = tick.Revision
+		}
 	}
 }
 
@@ -134,7 +165,13 @@ func (c *Cache) PlaylistRevision() int64 {
 func absorbArray(res json.RawMessage) (array json.RawMessage, count int, truncated bool, ok bool) {
 	var raw json.RawMessage
 	var obj map[string]json.RawMessage
+	total := -1
 	if json.Unmarshal(res, &obj) == nil {
+		if t, ok := obj["total"]; ok {
+			if n, err := strconv.Atoi(string(t)); err == nil {
+				total = n
+			}
+		}
 		raw = obj["tracks"]
 		if len(raw) == 0 {
 			raw = obj["items"]
@@ -155,6 +192,9 @@ func absorbArray(res json.RawMessage) (array json.RawMessage, count int, truncat
 	if len(rows) > QueueCap {
 		rows = rows[:QueueCap]
 		truncated = true
+	}
+	if total > len(rows) {
+		truncated = true // the player holds more rows than we were given
 	}
 	out, err := json.Marshal(rows)
 	if err != nil {
@@ -198,7 +238,12 @@ func (c *Cache) Queue() Queue {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	q := c.queue
-	q.PlaylistRevision = c.plRev
+	// The revision the rows were listed at, not the newest one heard of:
+	// edits guarded with it are refused (409) if the playlist moved on,
+	// instead of silently hitting the wrong row. Before any list, fall back.
+	if q.PlaylistRevision == 0 {
+		q.PlaylistRevision = c.plRev
+	}
 	return q
 }
 

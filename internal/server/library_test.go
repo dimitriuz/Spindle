@@ -13,7 +13,7 @@ import (
 )
 
 func libConfig(t *testing.T, fr *fakeRunner) Config {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	cfg.Runner = fr
 	return cfg
 }
@@ -22,7 +22,6 @@ func libGet(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorde
 	t.Helper()
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", path, nil)
-	r.Header.Set("X-Token", "deadbeef")
 	h.ServeHTTP(rec, r)
 	return rec
 }
@@ -127,12 +126,14 @@ func TestLibraryListingsCached(t *testing.T) {
 	}
 }
 
-func TestLibraryRequiresToken(t *testing.T) {
+func TestLibrarySitsBehindGuard(t *testing.T) {
 	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{}`)}}
 	h := New(libConfig(t, fr))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/library/local/albums", nil))
-	if rec.Code != http.StatusUnauthorized {
+	r := httptest.NewRequest("GET", "/api/library/local/albums", nil)
+	r.Host = "evil.example.org"
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("library must sit behind protect, got %d", rec.Code)
 	}
 }
@@ -148,6 +149,16 @@ func TestLibraryAlbumTracksParams(t *testing.T) {
 	libGet(t, h, "/api/library/navidrome/artist/ar2/tracks")
 	if fr.lastOp != "provider.tracks" || fr.lastParams["id"] != "ar2" {
 		t.Fatalf("artist tracks params: op=%s params=%v", fr.lastOp, fr.lastParams)
+	}
+}
+
+func TestArtistAlbumsParams(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded", Result: json.RawMessage(`{"ok":true,"albums":[]}`)}}
+	h := New(libConfig(t, fr))
+	libGet(t, h, "/api/library/navidrome/artist/ar1/albums?offset=0&limit=50")
+	// cliamp v2.4.0 wants the artist id as params.artist (params.id → "Artist not found")
+	if fr.lastOp != "provider.artist_albums" || fr.lastParams["artist"] != "ar1" {
+		t.Fatalf("artist albums params: op=%s params=%v", fr.lastOp, fr.lastParams)
 	}
 }
 

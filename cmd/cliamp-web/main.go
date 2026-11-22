@@ -22,6 +22,11 @@ import (
 	"cliamp-web/webui"
 )
 
+const (
+	pageSize       = 500
+	refreshTimeout = 30 * time.Second
+)
+
 type runConfig struct {
 	Socket       string
 	Port         int
@@ -36,8 +41,7 @@ func run(ctx context.Context, rc runConfig) error {
 	if rc.Verbose {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
-	tok, err := server.LoadOrCreateToken(rc.DataDir)
-	if err != nil {
+	if err := os.MkdirAll(rc.DataDir, 0o700); err != nil {
 		return err
 	}
 
@@ -46,28 +50,74 @@ func run(ctx context.Context, rc runConfig) error {
 	conn := ipc.NewConn(rc.Socket)
 	defer conn.Close()
 
+	// fetchAll lists a whole queue-like op page by page: one unpaged call can
+	// come back clipped to the player's default page.
+	fetchAll := func(rctx context.Context, op string) (json.RawMessage, error) {
+		var rows []json.RawMessage
+		total := -1
+		for len(rows) < snapshot.QueueCap {
+			job, err := conn.SubmitJob(rctx, op, map[string]any{"offset": len(rows), "limit": pageSize})
+			if err != nil {
+				return nil, err
+			}
+			var page struct {
+				Total  *int              `json:"total"`
+				Tracks []json.RawMessage `json:"tracks"`
+				Items  []json.RawMessage `json:"items"`
+			}
+			if json.Unmarshal(job.Result, &page) != nil {
+				return job.Result, nil // not the shape we know: let the cache judge it
+			}
+			if page.Tracks == nil {
+				page.Tracks = page.Items
+			}
+			rows = append(rows, page.Tracks...)
+			if page.Total != nil {
+				total = *page.Total
+			}
+			if len(page.Tracks) == 0 || total < 0 || len(rows) >= total {
+				break
+			}
+		}
+		out := map[string]any{"ok": true, "tracks": rows}
+		if total >= 0 {
+			out["total"] = total
+		}
+		return json.Marshal(out)
+	}
+
 	refresh := func() {
-		if resp, err := conn.Call(ctx, "state.get", nil); err == nil && len(resp.Snapshot) > 0 {
+		rctx, cancelRefresh := context.WithTimeout(ctx, refreshTimeout)
+		defer cancelRefresh()
+		if resp, err := conn.Call(rctx, "state.get", nil); err == nil && len(resp.Snapshot) > 0 {
 			cache.SetState(resp.Snapshot)
 		} else if err != nil && ctx.Err() == nil {
 			logger.Warn("state.get", "err", err)
 		}
-		if caps, err := conn.Call(ctx, "capabilities", nil); err == nil {
-			cache.SetCaps(caps.Raw)
+		if caps := cache.Caps(); len(caps) == 0 { // capabilities never change while it runs
+			if c, err := conn.Call(rctx, "capabilities", nil); err == nil {
+				cache.SetCaps(c.Raw)
+			}
 		}
+		// Stamp the rows with the playlist revision read BEFORE listing: if the
+		// playlist moves meanwhile, the stamp is older than the world and any
+		// edit guarded with it is refused rather than hitting the wrong row.
+		rev := cache.PlaylistRevision()
 		for _, op := range []string{"queue.list", "playnext.list"} {
-			job, err := conn.SubmitJob(ctx, op, nil)
+			res, err := fetchAll(rctx, op)
 			if err != nil {
 				logger.Warn(op, "err", err)
 				continue
 			}
 			if op == "queue.list" {
-				cache.AbsorbQueueResult(job.Result, cache.PlaylistRevision())
+				cache.AbsorbQueueResult(res, rev)
 			} else {
-				cache.AbsorbPlayNextResult(job.Result, cache.PlaylistRevision())
+				cache.AbsorbPlayNextResult(res, rev)
 			}
 		}
 	}
+	refresher := newSyncer(refresh)
+	go refresher.Loop(ctx)
 
 	sub := ipc.NewSubscriber(rc.Socket,
 		[]string{"runtime.state", "runtime.playback", "runtime.playlist", "runtime.settings", "runtime.job"},
@@ -81,10 +131,7 @@ func run(ctx context.Context, rc runConfig) error {
 				// the browser refetches /api/queue on this signal, so the
 				// queue cache must already hold the new rows: absorb first,
 				// then ring the bell.
-				go func() {
-					refresh()
-					hub.Broadcast("playlist", ev.Data)
-				}()
+				refresher.Request(func() { hub.Broadcast("playlist", ev.Data) })
 			case "job":
 				hub.Broadcast("job", ev.Data)
 			}
@@ -97,22 +144,20 @@ func run(ctx context.Context, rc runConfig) error {
 			}
 			hub.Broadcast("player", map[string]string{"status": status})
 			if on {
-				go func() {
-					refresh()
-					hub.Broadcast("resync", map[string]string{})
-				}()
+				cache.ResetRevision()
+				cache.SetCaps(nil) // a restarted player may be a different build
+				refresher.Request(func() { hub.Broadcast("resync", map[string]string{}) })
 			}
 		})
 	go sub.Run(ctx)
 
-
 	h := server.New(server.Config{
 		Cache: cache, Runner: conn, Hub: hub,
-		Auth: server.NewAuth(tok), Guard: server.NewHostGuard(rc.AllowedHosts),
+		Guard:   server.NewHostGuard(rc.AllowedHosts),
 		Limiter: server.NewLimiter(20, 40, time.Now), UI: webui.FS(), Logger: logger,
 	})
 
-	if err := writeStatus(rc.DataDir, tok, rc.Port, rc.Bind); err != nil {
+	if err := writeStatus(rc.DataDir, rc.Port, rc.Bind); err != nil {
 		logger.Warn("status.json", "err", err)
 	}
 
@@ -137,11 +182,10 @@ func run(ctx context.Context, rc runConfig) error {
 	}
 }
 
-func writeStatus(dir, tok string, port int, bind string) error {
+func writeStatus(dir string, port int, bind string) error {
 	hostport := net.JoinHostPort(bind, strconv.Itoa(port))
 	b, err := json.Marshal(map[string]any{
-		"url":        "http://" + hostport + "/?token=" + tok,
-		"token":      tok,
+		"url":        "http://" + hostport + "/",
 		"port":       port,
 		"pid":        os.Getpid(),
 		"started_at": time.Now().UTC().Format(time.RFC3339),

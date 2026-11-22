@@ -16,9 +16,9 @@ type sseClient struct {
 	sc   *bufio.Scanner
 }
 
-func sseConnect(t *testing.T, baseURL, tok string) *sseClient {
+func sseConnect(t *testing.T, baseURL, _ string) *sseClient {
 	t.Helper()
-	req, err := http.NewRequest("GET", baseURL+"/api/events?token="+tok, nil)
+	req, err := http.NewRequest("GET", baseURL+"/api/events", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func (c *sseClient) next(t *testing.T, d time.Duration) sseFrame {
 }
 
 func TestSSEFanOutToTwoClients(t *testing.T) {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	h := New(cfg)
 	srv := httptest.NewServer(h)
 	defer srv.Close()
@@ -98,7 +98,7 @@ func TestSSEFanOutToTwoClients(t *testing.T) {
 }
 
 func TestSSEReplayCurrentPlayerAndStateOnConnect(t *testing.T) { // Review Focus #3
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	cfg.Cache.SetOnline(true)
 	cfg.Cache.SetState([]byte(`{"state":"playing","revision":3}`))
 	h := New(cfg)
@@ -118,7 +118,7 @@ func TestSSEReplayCurrentPlayerAndStateOnConnect(t *testing.T) { // Review Focus
 }
 
 func TestSSENamedPing(t *testing.T) {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	cfg.HeartbeatInterval = 50 * time.Millisecond
 	h := New(cfg)
 	srv := httptest.NewServer(h)
@@ -137,7 +137,7 @@ func TestSSENamedPing(t *testing.T) {
 }
 
 func TestSSEUnsubscribeOnClientDisconnect(t *testing.T) {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	h := New(cfg)
 	srv := httptest.NewServer(h)
 	defer srv.Close()
@@ -158,7 +158,7 @@ func TestSSEUnsubscribeOnClientDisconnect(t *testing.T) {
 }
 
 func TestSSESlowClientDroppedNotStalled(t *testing.T) {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	h := New(cfg)
 	srv := httptest.NewServer(h)
 	defer srv.Close()

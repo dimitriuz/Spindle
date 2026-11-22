@@ -86,10 +86,6 @@ const (
 	// writeGrace bounds how long one frame may sit in the socket buffer when
 	// the peer stops draining it.
 	writeGrace = 5 * time.Second
-	// readIdle is the liveness window: a peer that sends nothing and never
-	// closes is treated as gone after this long, so a wedged socket cannot look
-	// healthy forever. Idle re-dials are cheap and keep the pipe fresh.
-	readIdle = 60 * time.Second
 )
 
 func decodeErr(raw json.RawMessage) *IPCError {
@@ -297,9 +293,10 @@ func (c *Conn) readLoop(st *connState) error {
 	sc := bufio.NewScanner(st.nc)
 	sc.Buffer(make([]byte, 0, 64*1024), maxLine)
 	for {
-		if err := st.nc.SetReadDeadline(time.Now().Add(readIdle)); err != nil {
-			break // generation is already gone
-		}
+		// No idle read deadline: a quiet socket is healthy, and tearing it
+		// down on a timer failed requests that cliamp had already received.
+		// A dead peer shows as EOF/ECONNRESET, a restarted one through the
+		// dev/ino check, and a wedged one as the caller's own timeout.
 		if !sc.Scan() {
 			break
 		}

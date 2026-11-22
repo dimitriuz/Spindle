@@ -85,7 +85,7 @@ func (f *fakeRunner) SubmitJob(ctx context.Context, op string, p any) (*ipc.Job,
 }
 
 func commandConfig(t *testing.T, fr *fakeRunner) Config {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	cfg.Runner = fr
 	cfg.Limiter = NewLimiter(20, 40, time.Now)
 	return cfg
@@ -94,7 +94,7 @@ func commandConfig(t *testing.T, fr *fakeRunner) Config {
 func postCommand(h http.Handler, body string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/command", strings.NewReader(body))
-	r.Header.Set("X-Token", "deadbeef")
+	r.Header.Set("Content-Type", "application/json")
 	h.ServeHTTP(rec, r)
 	return rec
 }
@@ -178,12 +178,11 @@ func TestRateLimitEndpoint429(t *testing.T) {
 }
 
 func TestQueueGETServesCache(t *testing.T) {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	cfg.Cache.AbsorbQueueResult(json.RawMessage(`{"tracks":[{"path":"a"}]}`), 5)
 	h := New(cfg)
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/queue", nil)
-	r.Header.Set("X-Token", "deadbeef")
 	h.ServeHTTP(rec, r)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"playlist_revision":5`) {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
@@ -191,14 +190,67 @@ func TestQueueGETServesCache(t *testing.T) {
 }
 
 func TestCapabilitiesGETServesCache(t *testing.T) {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	cfg.Cache.SetCaps(json.RawMessage(`{"operations":["play"]}`))
 	h := New(cfg)
 	rec := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/capabilities", nil)
-	r.Header.Set("X-Token", "deadbeef")
 	h.ServeHTTP(rec, r)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"play"`) {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestCommandRefusesOpsTheUIDoesNotUse(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded"}}
+	h := New(commandConfig(t, fr))
+	for _, op := range []string{"plugin.call", "url.load", "history.clear", "playlist.delete", "system.exec"} {
+		rec := postCommand(h, `{"op":"`+op+`"}`)
+		if rec.Code != 403 || fr.calls != 0 {
+			t.Fatalf("%s: want 403 and no upstream call, got %d (calls=%d)", op, rec.Code, fr.calls)
+		}
+	}
+	if rec := postCommand(h, `{"op":"toggle"}`); rec.Code != 200 {
+		t.Fatalf("allowed op: %d", rec.Code)
+	}
+}
+
+func TestCommandTimeoutIs504WithJob(t *testing.T) {
+	fr := &fakeRunner{job: &ipc.Job{ID: "j9", State: "running"}, err: context.DeadlineExceeded}
+	h := New(commandConfig(t, fr))
+	rec := postCommand(h, `{"op":"provider.load_album","params":{"provider":"navidrome","album":"a"}}`)
+	if rec.Code != 504 || !strings.Contains(rec.Body.String(), `"j9"`) || !strings.Contains(rec.Body.String(), "job_timeout") {
+		t.Fatalf("want 504 job_timeout with the job, got %d %s", rec.Code, rec.Body)
+	}
+}
+
+// Stream URLs carry the Navidrome login. The browser gets them scrubbed and
+// hands the scrubbed path back to play a track; cliamp must get the real one.
+func TestStreamCredentialsNeverReachTheBrowser(t *testing.T) {
+	const real = "https://nd.lan/rest/stream?c=cliamp&id=abc&s=SALT&t=TOKEN&u=bob"
+	fr := &fakeRunner{job: &ipc.Job{State: "succeeded"}}
+	cfg := commandConfig(t, fr)
+	cfg.Cache.SetState(json.RawMessage(`{"revision":3,"state":"playing","track":{"path":"` + strings.ReplaceAll(real, "&", `&`) + `"}}`))
+	h := New(cfg)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/state", nil))
+	body := rec.Body.String()
+	if strings.Contains(body, "SALT") || strings.Contains(body, "TOKEN") || strings.Contains(body, "bob") {
+		t.Fatalf("credentials leaked through /api/state: %s", body)
+	}
+	var st struct{ Track struct{ Path string } }
+	if err := json.Unmarshal([]byte(body), &st); err != nil || st.Track.Path == "" {
+		t.Fatalf("state: %v %s", err, body)
+	}
+	// cliamp's track.play takes a track OBJECT; the path inside must be restored
+	if rec := postCommand(h, `{"op":"track.play","params":{"track":{"title":"x","path":`+strconvQuote(st.Track.Path)+`}}}`); rec.Code != 200 {
+		t.Fatalf("play: %d", rec.Code)
+	}
+	tr, _ := fr.lastParams["track"].(map[string]any)
+	if tr["path"] != real || tr["title"] != "x" {
+		t.Fatalf("cliamp must receive the original URL inside the object, got %v", fr.lastParams["track"])
+	}
+}
+
+func strconvQuote(s string) string { b, _ := json.Marshal(s); return string(b) }

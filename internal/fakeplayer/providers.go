@@ -125,6 +125,7 @@ func (f *Fake) providerOps(c net.Conn, id, op string, params json.RawMessage) bo
 		Playlist string `json:"playlist"`
 		Album    string `json:"album"`
 		ID       string `json:"id"`
+		Artist   string `json:"artist"`
 		Query    string `json:"query"`
 		Offset   int    `json:"offset"`
 		Limit    int    `json:"limit"`
@@ -178,6 +179,20 @@ func (f *Fake) providerOps(c net.Conn, id, op string, params json.RawMessage) bo
 			return true
 		}
 		b, _ := json.Marshal(paged(fixtureTracks("artist", p.ID), p.Offset, p.Limit, "tracks"))
+		ok(string(b))
+	case "provider.artist_albums":
+		// live v2.4.0: the artist id rides params.artist (params.id → "Artist not found").
+		if p.Artist == "" {
+			failJob(c, id, op, "navidrome: missing parameter: 'artist' (code 10)")
+			return true
+		}
+		var rows []map[string]any
+		for _, a := range fixtureAlbums() {
+			if a["artist_id"] == p.Artist {
+				rows = append(rows, a)
+			}
+		}
+		b, _ := json.Marshal(paged(rows, p.Offset, p.Limit, "albums"))
 		ok(string(b))
 	case "provider.search":
 		b, _ := json.Marshal(paged(fixtureSearch(p.Query), p.Offset, p.Limit, "tracks"))

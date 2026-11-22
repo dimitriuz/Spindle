@@ -54,14 +54,13 @@ func TestPlaylistSignalFollowsCacheSwap(t *testing.T) {
 	defer cancel()
 	port := freePort(t)
 	go func() { _ = run(ctx, runConfig{Socket: sock, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
-	st := readStatus(t, dir)
-	tok, _ := st["token"].(string)
+	readStatus(t, dir)
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 
 	// initial queue: Row A
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if q := getJSON(t, base+"/api/queue", tok); len(q["tracks"].([]any)) == 1 {
+		if q := getJSON(t, base+"/api/queue"); len(q["tracks"].([]any)) == 1 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -71,7 +70,7 @@ func TestPlaylistSignalFollowsCacheSwap(t *testing.T) {
 	}
 
 	// open SSE before stirring, so the playlist frame is observed
-	sseResp, err := testHTTP.Get(base + "/api/events?token=" + tok)
+	sseResp, err := testHTTP.Get(base + "/api/events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +83,8 @@ func TestPlaylistSignalFollowsCacheSwap(t *testing.T) {
 		}
 	}()
 
-	if r := postCommand(t, base, tok, `{"op":"make-change"}`); r["job"] == nil {
-		t.Fatalf("make-change rejected: %v", r)
+	if r := postCommand(t, base, `{"op":"queue.clear"}`); r["job"] == nil {
+		t.Fatalf("queue.clear rejected: %v", r)
 	}
 
 	sawPlaylist := false
@@ -104,7 +103,7 @@ func TestPlaylistSignalFollowsCacheSwap(t *testing.T) {
 	}
 
 	// the signal just landed: the cache must already hold Row B
-	q := getJSON(t, base+"/api/queue", tok)
+	q := getJSON(t, base+"/api/queue")
 	tracks, _ := q["tracks"].([]any)
 	if len(tracks) != 1 {
 		t.Fatalf("queue lost rows after signal: %v", q)
@@ -142,13 +141,12 @@ func readStatus(t *testing.T, dir string) map[string]any {
 	return nil
 }
 
-func getJSON(t *testing.T, url, tok string) map[string]any {
+func getJSON(t *testing.T, url string) map[string]any {
 	t.Helper()
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("X-Token", tok)
 	resp, err := testHTTP.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -174,9 +172,8 @@ func TestRunWiresFakePlayer(t *testing.T) {
 	go func() { errCh <- run(ctx, runConfig{Socket: sock, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
 
 	st := readStatus(t, dir)
-	tok, _ := st["token"].(string)
-	if tok == "" {
-		t.Fatalf("status.json has no token: %v", st)
+	if _, has := st["token"]; has {
+		t.Fatalf("status.json must not carry a token any more: %v", st)
 	}
 	if p, _ := st["port"].(float64); int(p) != port {
 		t.Fatalf("status port %v != %d", st["port"], port)
@@ -191,7 +188,7 @@ func TestRunWiresFakePlayer(t *testing.T) {
 	var snap map[string]any
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		snap = getJSON(t, base+"/api/state", tok)
+		snap = getJSON(t, base+"/api/state")
 		if snap["state"] == "playing" {
 			break
 		}
@@ -201,19 +198,19 @@ func TestRunWiresFakePlayer(t *testing.T) {
 		t.Fatalf("state never prefetched: %v", snap)
 	}
 
-	q := getJSON(t, base+"/api/queue", tok)
+	q := getJSON(t, base+"/api/queue")
 	tracks, _ := q["tracks"].([]any)
 	if len(tracks) != 1 {
 		t.Fatalf("queue never prefetched: %v", q)
 	}
 
-	caps := getJSON(t, base+"/api/capabilities", tok)
+	caps := getJSON(t, base+"/api/capabilities")
 	if ops, _ := caps["result"].([]any); len(ops) != 2 {
 		t.Fatalf("capabilities envelope not passed through: %v", caps)
 	}
 
 	// command path reaches the fake player
-	resp := postCommand(t, base, tok, `{"op":"toggle"}`)
+	resp := postCommand(t, base, `{"op":"toggle"}`)
 	if resp["job"] == nil {
 		t.Fatalf("command got no job: %v", resp)
 	}
@@ -235,13 +232,13 @@ func TestRunWiresFakePlayer(t *testing.T) {
 	}
 }
 
-func postCommand(t *testing.T, base, tok, body string) map[string]any {
+func postCommand(t *testing.T, base, body string) map[string]any {
 	t.Helper()
 	r, err := http.NewRequest("POST", base+"/api/command", strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.Header.Set("X-Token", tok)
+	r.Header.Set("Content-Type", "application/json")
 	resp, err := testHTTP.Do(r)
 	if err != nil {
 		t.Fatal(err)
@@ -278,13 +275,12 @@ func TestRunServesLibraryAndSearch(t *testing.T) {
 	dir := t.TempDir()
 	port := freePort(t)
 	go func() { _ = run(ctx, runConfig{Socket: f.Path, Port: port, DataDir: dir, Bind: "127.0.0.1"}) }()
-	st := readStatus(t, dir)
-	tok, _ := st["token"].(string)
+	readStatus(t, dir)
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		r := getJSON(t, base+"/api/library/providers", tok)
+		r := getJSON(t, base+"/api/library/providers")
 		if r["ok"] == true {
 			break
 		}
@@ -293,16 +289,13 @@ func TestRunServesLibraryAndSearch(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	r := getJSON(t, base+"/api/library/navidrome/playlists?offset=0&limit=50", tok)
+	r := getJSON(t, base+"/api/library/navidrome/playlists?offset=0&limit=50")
 	if total, _ := r["total"].(float64); total != 120 {
 		t.Fatalf("want 120 playlists, got %v", r["total"])
 	}
-	s := getJSON(t, base+"/api/search/ytmusic?q=lofi", tok)
+	s := getJSON(t, base+"/api/search/ytmusic?q=lofi")
 	tracks, _ := s["tracks"].([]any)
 	if len(tracks) != 3 || tracks[0].(map[string]any)["stream"] != true {
 		t.Fatalf("search passthrough: %v", s)
-	}
-	if rec := getJSONNoAuth(t, base+"/api/library/local/albums"); rec["code"] == nil {
-		t.Fatalf("library must require token: %v", rec)
 	}
 }

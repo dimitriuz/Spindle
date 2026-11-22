@@ -24,10 +24,10 @@ func uiGet(h http.Handler, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
-// The UI lives at the root and needs no token: only /api/* carries player
+// The UI lives at the root and is open: only /api/* carries player
 // state and guards on it.
-func TestUIServesAtRootWithoutToken(t *testing.T) {
-	cfg := authedConfig(t)
+func TestUIServesAtRoot(t *testing.T) {
+	cfg := guardedConfig(t)
 	cfg.UI = fakeUI()
 	h := New(cfg)
 
@@ -55,16 +55,16 @@ func TestUIServesAtRootWithoutToken(t *testing.T) {
 	if rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "/" {
 		t.Fatalf("old /next/: %d %q", rec.Code, rec.Header().Get("Location"))
 	}
-	// data endpoints still guard
-	rec = uiGet(h, "/api/state")
-	if rec.Code != 401 {
-		t.Fatalf("api must still demand the token: %d", rec.Code)
+	// unknown API paths are a 404, not the HTML page
+	rec = uiGet(h, "/api/nope")
+	if rec.Code != 404 {
+		t.Fatalf("unknown api path: want 404, got %d", rec.Code)
 	}
 }
 
 // The real embedded files must satisfy what the page references.
 func TestUIEmbeddedPageWired(t *testing.T) {
-	cfg := authedConfig(t)
+	cfg := guardedConfig(t)
 	cfg.UI = webui.FS()
 	h := New(cfg)
 	rec := uiGet(h, "/")
@@ -81,7 +81,7 @@ func TestUIEmbeddedPageWired(t *testing.T) {
 
 // Without a UI configured, root is 404 — but never a token wall.
 func TestUINilIsPlain404(t *testing.T) {
-	h := New(authedConfig(t))
+	h := New(guardedConfig(t))
 	if rec := uiGet(h, "/"); rec.Code != 404 {
 		t.Fatalf("nil UI: %d", rec.Code)
 	}

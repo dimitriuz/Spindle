@@ -139,3 +139,73 @@ func TestOnlineFlagStillWorks(t *testing.T) {
 		t.Fatal("online flag lost")
 	}
 }
+
+// A slow state.get reply (taken before playback started) must not clobber a
+// newer runtime.state event: that left the UI showing "stopped" while the
+// player was playing, so the first play press paused it.
+func TestSetStateIgnoresOlderRevision(t *testing.T) {
+	c := NewCache()
+	c.Apply(ev("runtime.state", `{"revision":32,"state":"playing"}`))
+	c.SetState(json.RawMessage(`{"revision":31,"state":"stopped"}`))
+	if got := string(c.State()); got != `{"revision":32,"state":"playing"}` {
+		t.Fatalf("stale snapshot overwrote newer state: %s", got)
+	}
+	c.SetState(json.RawMessage(`{"revision":33,"state":"paused"}`))
+	if got := string(c.State()); got != `{"revision":33,"state":"paused"}` {
+		t.Fatalf("newer snapshot must win: %s", got)
+	}
+}
+
+// After the player restarts its revisions begin again; ResetRevision lets the
+// resync snapshot through.
+func TestResetRevisionAcceptsRestartedPlayer(t *testing.T) {
+	c := NewCache()
+	c.SetState(json.RawMessage(`{"revision":900,"state":"playing"}`))
+	c.ResetRevision()
+	c.SetState(json.RawMessage(`{"revision":2,"state":"stopped"}`))
+	if got := string(c.State()); got != `{"revision":2,"state":"stopped"}` {
+		t.Fatalf("state after reset: %s", got)
+	}
+}
+
+func TestStalePlaybackTickCannotRollBackState(t *testing.T) {
+	c := NewCache()
+	c.SetState(json.RawMessage(`{"revision":10,"state":"playing","position":5}`))
+	c.Apply(ev("runtime.playback", `{"revision":9,"state":"stopped","position":0}`))
+	var got struct {
+		State    string
+		Position float64
+	}
+	_ = json.Unmarshal(c.State(), &got)
+	if got.State != "playing" || got.Position != 5 {
+		t.Fatalf("stale tick merged: %s", c.State())
+	}
+	c.Apply(ev("runtime.playback", `{"revision":11,"position":6}`))
+	_ = json.Unmarshal(c.State(), &got)
+	if got.Position != 6 {
+		t.Fatalf("newer tick must merge: %s", c.State())
+	}
+	// and it advanced the guard: a state.get older than the tick is dropped
+	c.SetState(json.RawMessage(`{"revision":10,"state":"stopped"}`))
+	_ = json.Unmarshal(c.State(), &got)
+	if got.State != "playing" {
+		t.Fatalf("snapshot older than the last tick overwrote it: %s", c.State())
+	}
+}
+
+func TestQueueServesTheRevisionItWasListedAt(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(json.RawMessage(`{"ok":true,"tracks":[{"path":"a"}]}`), 5)
+	c.Apply(ev("runtime.playlist", `{"playlist_revision":6}`)) // moved on; rows not refreshed yet
+	if got := c.Queue().PlaylistRevision; got != 5 {
+		t.Fatalf("rows listed at 5 must be guarded with 5 so a stale edit is refused, got %d", got)
+	}
+}
+
+func TestQueueTruncatedWhenPlayerHoldsMore(t *testing.T) {
+	c := NewCache()
+	c.AbsorbQueueResult(json.RawMessage(`{"ok":true,"total":900,"tracks":[{"path":"a"}]}`), 1)
+	if q := c.Queue(); !q.Truncated || q.Count != 1 {
+		t.Fatalf("total 900 with 1 row must be flagged truncated: %+v", q)
+	}
+}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"sync"
 	"time"
 )
@@ -20,6 +21,20 @@ type bucket struct {
 	last   time.Time
 }
 
+const (
+	sweepAbove = 256
+	idleTTL    = time.Minute
+)
+
+// clientKey is the limiter key for a request: the peer IP, not ip:port, or
+// every new TCP connection would arrive with a fresh, full bucket.
+func clientKey(remoteAddr string) string {
+	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return h
+	}
+	return remoteAddr
+}
+
 func NewLimiter(rate float64, burst int, now func() time.Time) *Limiter {
 	return &Limiter{rate: rate, burst: burst, now: now, m: map[string]*bucket{}}
 }
@@ -28,6 +43,14 @@ func (l *Limiter) Allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
+	if len(l.m) > sweepAbove {
+		// drop buckets that have been idle long enough to be full again
+		for k, v := range l.m {
+			if now.Sub(v.last) > idleTTL {
+				delete(l.m, k)
+			}
+		}
+	}
 	b, ok := l.m[key]
 	if !ok {
 		b = &bucket{tokens: float64(l.burst), last: now}

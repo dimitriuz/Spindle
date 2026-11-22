@@ -126,6 +126,18 @@ func (s *serverState) libraryArtistTracks(w http.ResponseWriter, r *http.Request
 	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", params)
 }
 
+// libraryArtistAlbums lists an artist's albums. cliamp v2.4.0 takes the
+// artist id as params.artist (params.id fails "Artist not found").
+func (s *serverState) libraryArtistAlbums(w http.ResponseWriter, r *http.Request) {
+	params, ok := libParams(r)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
+	params["artist"] = r.PathValue("id")
+	s.libraryGET(w, r, s.cfg.listCache, "provider.artist_albums", params)
+}
+
 func (s *serverState) libraryPlaylistTracks(w http.ResponseWriter, r *http.Request) {
 	params, ok := libParams(r)
 	if !ok {

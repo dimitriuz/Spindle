@@ -91,8 +91,8 @@ cliamp-web serve --port 8730 [--lan] [--socket PATH] [--data-dir DIR] \
                  [--allowed-hosts LIST] [--verbose]
 ```
 
-It writes `~/.local/share/cliamp/web/status.json` (`0600`) containing the URL
-**with the access token**:
+It writes `~/.local/share/cliamp/web/status.json` (`0600`) with the URL, port
+and pid:
 
 ```sh
 jq -r .url ~/.local/share/cliamp/web/status.json
@@ -108,15 +108,24 @@ jq -r .url ~/.local/share/cliamp/web/status.json
 
 ## Security
 
-- Every request except `/api/health` needs a 32-byte hex token (query `?token=`
-  for GET/SSE, `X-Token` header for POST). Token lives in
-  `~/.local/share/cliamp/web/token`, mode `0600`.
+There is **no login**: this is built for a trusted home network, and anyone who
+can reach the port can control playback. Do not expose it to the internet.
+What it does guard against:
+
 - Default bind is `127.0.0.1`; `--lan` / `lan = true` is an explicit opt-in.
-- Host header is validated against loopback names plus `allowed_hosts`
+- Host header is validated against local addresses plus `allowed_hosts`
   (DNS-rebinding guard).
-- `/api/command` is rate limited (20 req/s, burst 40).
-- On LAN the token travels in cleartext HTTP. For anything beyond a trusted
-  network, terminate TLS with a reverse proxy and add the hostname:
+- State-changing requests must be `application/json` from the same origin, so
+  a web page open in a browser on your LAN cannot fire commands at the bridge.
+- `/api/command` only forwards the operations the UI uses (transport, volume,
+  queue and play-next edits, provider load). Plugin calls, URL loading and
+  destructive ops such as `history.clear` are refused.
+- Stream URLs that carry provider credentials (Navidrome's `u`/`s`/`t`) are
+  scrubbed from everything sent to the browser; the bridge keeps the original
+  and swaps it back in when a track is played or queued.
+- `/api/command` is rate limited per client IP (20 req/s, burst 40).
+- Traffic is plain HTTP. For anything beyond a trusted network, terminate TLS
+  (and add auth) in a reverse proxy and list the hostname:
 
 ```
 # Caddyfile

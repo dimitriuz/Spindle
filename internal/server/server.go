@@ -15,11 +15,10 @@ type Config struct {
 	Cache   *snapshot.Cache
 	Runner  ipc.OpRunner
 	Hub     *Hub
-	Auth    *Auth
 	Guard   *HostGuard
 	Limiter *Limiter
 	// UI is the embedded web interface (webui: index.html, app.css, app.js),
-	// served at the root without a token; nil disables it.
+	// served at the root; nil disables it.
 	UI     fs.FS
 	Logger *slog.Logger
 	// LibraryTTL bounds library listing cache freshness (0 ⇒ 60 s).
@@ -51,9 +50,8 @@ func (c *Config) heartbeat() time.Duration {
 
 type serverState struct{ cfg Config }
 
-// New assembles the HTTP handler. Auth + Host guard (protect) wrap every
-// data endpoint; /api/health is token-free by design. Rate limiting joins
-// in Task 7, static SPA serving lands with it.
+// New assembles the HTTP handler. The request guard (protect) wraps every
+// data endpoint; /api/health is open by design.
 func New(cfg Config) http.Handler {
 	if cfg.LibraryTTL == 0 {
 		cfg.LibraryTTL = defaultLibraryTTL
@@ -73,6 +71,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/{kind}", s.protect(http.HandlerFunc(s.libraryList)))
 	mux.Handle("GET /api/library/{provider}/album/{id}/tracks", s.protect(http.HandlerFunc(s.libraryAlbumTracks)))
 	mux.Handle("GET /api/library/{provider}/artist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryArtistTracks)))
+	mux.Handle("GET /api/library/{provider}/artist/{id}/albums", s.protect(http.HandlerFunc(s.libraryArtistAlbums)))
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))
@@ -83,8 +82,7 @@ func New(cfg Config) http.Handler {
 	return mux
 }
 
-// uiHandler serves the embedded interface without a token: assets carry no
-// player state; only /api/* is guarded. Unknown paths fall back to the page
+// uiHandler serves the embedded interface: assets carry no player state. Unknown paths fall back to the page
 // so hash routes survive reloads. The page is served as "/" because
 // serveFile redirects any request path ending in /index.html to "./".
 func (s *serverState) uiHandler() http.Handler {
@@ -92,6 +90,12 @@ func (s *serverState) uiHandler() http.Handler {
 		return http.NotFoundHandler()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r) // never answer a mistyped API call with the HTML page
+			return
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
 		name := strings.TrimPrefix(r.URL.Path, "/")
 		if name != "" {
 			if f, err := s.cfg.UI.Open(name); err == nil {

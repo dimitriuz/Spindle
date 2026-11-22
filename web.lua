@@ -2,7 +2,7 @@
 local p = plugin.register({
     name        = "web",
     type        = "hook",
-    version     = "1.0.0",
+    version     = "1.1.0",
     description = "LAN web interface (spawns the cliamp-web bridge)",
     permissions = {"exec"},
 })
@@ -12,7 +12,8 @@ local lan   = p:config("lan")
 local hosts = p:config("allowed_hosts")
 local bin   = p:config("binary") or "cliamp-web"
 
-local datadir = os.getenv("HOME") .. "/.local/share/cliamp/web"
+-- same lookup as the bridge's own default, so status.json is found
+local datadir = (os.getenv("XDG_DATA_HOME") or (os.getenv("HOME") .. "/.local/share")) .. "/cliamp/web"
 local restarts, handle, quitting = 0, nil, false
 
 local function arglist()
@@ -54,6 +55,11 @@ local function start()
         cliamp.log.error("cannot start '" .. bin .. "'; install it and add it to [plugins] allowed_binaries")
     else
         handle = h
+        -- a bridge that stayed up a minute was healthy: forgive earlier crashes,
+        -- so one bad hour does not use up the retries for the whole session
+        cliamp.timer.after(60, function()
+            if handle == h and h:alive() then restarts = 0 end
+        end)
     end
 end
 
@@ -62,14 +68,15 @@ p:on("app.start", function()
     cliamp.timer.after(1.5, function()
         local st = read_status()
         if st and st.url then
-            -- token deliberately NOT shown in the TUI: get it via plugins call
-            cliamp.message("web remote: " .. st.url:gsub("%?token=[^&]*", "?token=…"), 10)
+            cliamp.message("web remote: " .. st.url, 10)
         end
     end)
 end)
 
 p:on("app.quit", function()
     quitting = true
+    -- do not leave the bridge holding the port for the next cliamp
+    if handle then handle:cancel() end
 end)
 
 p:command("url", function()

@@ -146,3 +146,15 @@ func TestLyricsOp(t *testing.T) {
 		t.Fatalf("empty lyrics must fail like live: %v", err)
 	}
 }
+
+func TestTrackPlayWantsAnObject(t *testing.T) {
+	c := startProviders(t)
+	for _, op := range []string{"track.play", "track.queue"} {
+		if _, err := c.SubmitJob(context.Background(), op, map[string]any{"track": "/fake/a.flac"}); err == nil {
+			t.Fatalf("%s with a path string must fail like live", op)
+		}
+		if _, err := c.SubmitJob(context.Background(), op, map[string]any{"track": map[string]any{"path": "/fake/a.flac"}}); err != nil {
+			t.Fatalf("%s with an object: %v", op, err)
+		}
+	}
+}

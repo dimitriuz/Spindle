@@ -4,12 +4,6 @@
 // hash routing, imperative rows). The data layer is the cliamp bridge:
 // snapshot state, {op, params} commands, library lists.
 
-// ---- token ----
-const token =
-  (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cliamp-token')) ||
-  (typeof location !== 'undefined' && new URLSearchParams(location.search).get('token')) ||
-  '';
-if (typeof sessionStorage !== 'undefined' && token) sessionStorage.setItem('cliamp-token', token);
 if (typeof history !== 'undefined' && location.search) history.replaceState(null, '', location.pathname);
 
 // ---- pure ----
@@ -21,13 +15,34 @@ function initial() {
 // reduce applies one event to the page state and returns the new state.
 // Events: {type:'state', data, now} full snapshot; {type:'tick', data}
 // partial (position pulses); {type:'queue', data}; {type:'conn', up}.
+function forgetRevision(s) {
+  return s.state ? { state: Object.assign({}, s.state, { revision: 0 }) } : {};
+}
+
 function reduce(s, ev) {
+  // never let an older snapshot replace a newer one (a command reply is taken
+  // before playback starts and can arrive after the SSE state event)
+  if ((ev.type === 'state' || ev.type === 'tick') && ev.data && s.state &&
+      Number(ev.data.revision) > 0 && Number(ev.data.revision) < Number(s.state.revision)) return s;
   if (ev.type === 'state') return Object.assign({}, s, { state: ev.data, at: ev.now });
   if (ev.type === 'tick') return Object.assign({}, s, { state: Object.assign({}, s.state, ev.data), at: ev.now });
   if (ev.type === 'queue') return Object.assign({}, s, { queue: ev.data });
-  if (ev.type === 'conn') return Object.assign({}, s, { connected: ev.up });
+  if (ev.type === 'conn') return Object.assign({}, s, { connected: ev.up },
+    ev.up ? forgetRevision(s) : {});
+  // the player (re)connected or the bridge resynced: cliamp may have
+  // restarted and counts revisions from 1 again, so older numbers are fine
+  if (ev.type === 'reset') return Object.assign({}, s, forgetRevision(s));
   return s;
 }
+
+// cliamp omits zero values from its snapshot: the first track has no `index`
+// and 0 dB has no `volume`. Absent therefore means 0, not unknown.
+function curIndex(st) {
+  if (!st) return -1;
+  if (st.index != null) return Number(st.index);
+  return st.track ? 0 : -1;
+}
+function curVolume(st) { return st && st.volume != null ? Number(st.volume) : 0; }
 
 // position is the song position in seconds at time now, moved on from the
 // last snapshot while playing. cliamp counts and seeks in seconds.
@@ -95,11 +110,11 @@ function moveTarget(i, n, dir) {
 
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 
-// makeApi wraps fetch: token header, JSON in and out, and one error type
+// makeApi wraps fetch: JSON in and out, and one error type
 // with the status, the server's detail, and stale (409 revision clash).
 function makeApi(fetchFn) {
   async function call(path, init) {
-    const r = await fetchFn(path, Object.assign({ headers: { 'X-Token': token } }, init));
+    const r = await fetchFn(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, init));
     if (!r.ok) {
       let detail = '';
       try {
@@ -121,7 +136,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -200,7 +215,7 @@ if (typeof document !== 'undefined') (function () {
     S = reduce(S, ev);
     if (ev.type === 'state' || ev.type === 'tick') {
       renderNow();
-      if ((prev.state && prev.state.index) !== (S.state && S.state.index)) markCurrent();
+      if (curIndex(prev.state) !== curIndex(S.state)) markCurrent();
     } else if (ev.type === 'queue') {
       renderQueue();
     } else if (ev.type === 'conn') {
@@ -227,7 +242,7 @@ if (typeof document !== 'undefined') (function () {
   }
   function connect() {
     dog.heard();
-    const mine = es = new EventSource('/api/events?token=' + encodeURIComponent(token));
+    const mine = es = new EventSource('/api/events');
     const up = () => {
       dog.heard();
       if (isUp) return;
@@ -239,12 +254,13 @@ if (typeof document !== 'undefined') (function () {
     mine.addEventListener('state', (e) => { up(); dispatch({ type: 'state', data: JSON.parse(e.data), now: now() }); });
     mine.addEventListener('playback', (e) => { up(); dispatch({ type: 'tick', data: JSON.parse(e.data), now: now() }); });
     mine.addEventListener('playlist', () => { up(); loadQueue(); });
-    mine.addEventListener('resync', () => { up(); loadState(); loadQueue(); });
+    mine.addEventListener('resync', () => { up(); dispatch({ type: 'reset' }); loadState(); loadQueue(); });
     mine.addEventListener('player', (e) => {
       up();
       const d = JSON.parse(e.data);
       const was = S.state && S.state.player;
       dispatch({ type: 'tick', data: { player: d.status }, now: now() });
+      dispatch({ type: 'reset' });
       if (was && was !== d.status) toast(d.status === 'online' ? 'player online' : 'player offline', d.status !== 'online');
     });
     mine.addEventListener('ping', () => up());
@@ -277,7 +293,7 @@ if (typeof document !== 'undefined') (function () {
     $('b-repeat').classList.toggle('on', rep !== 'Off');
     $('rep1').hidden = rep !== 'One';
     $('b-lyrics').classList.toggle('on', !$('lyrics').hidden);
-    if (!volHold) setVolume(Number(st.volume == null ? $('volume').value : st.volume));
+    if (!volHold) setVolume(curVolume(st));
     drawPosition();
   }
   function setVolume(db) {
@@ -423,8 +439,11 @@ if (typeof document !== 'undefined') (function () {
   const enc = encodeURIComponent;
 
   // track actions: cliamp plays a track by path; queue ops guard on revision.
-  const playTrack = (t) => cmd('track.play', { track: t.path }, true);
-  const nextTrack = (t) => cmd('track.queue', { track: t.path }, true);
+  // cliamp wants the whole track object here ("play a supplied track"); a bare
+  // path string fails with invalid_params. Drop only row bookkeeping.
+  const trackArg = (t) => { const o = Object.assign({}, t); delete o.index; delete o.queued; return o; };
+  const playTrack = (t) => cmd('track.play', { track: trackArg(t) }, true);
+  const nextTrack = (t) => cmd('track.queue', { track: trackArg(t) }, true);
   const trackMenu = (t) => [{ label: 'Play', fn: () => playTrack(t) }, { label: 'Play next', fn: () => nextTrack(t) }];
   // replacing the queue is audible and destructive — confirm first (spec v3).
   const replaceMenu = (kind, provider, id, name) => [{
@@ -438,7 +457,7 @@ if (typeof document !== 'undefined') (function () {
   // ---- Queue ----
   let confirming = false;
   function renderQueue() {
-    const q = S.queue, cur = S.state ? Number(S.state.index ?? -1) : -1;
+    const q = S.queue, cur = curIndex(S.state);
     const sections = [];
     if (q.play_next && q.play_next.length) {
       sections.push(h('div', { class: 'sub' }, 'Play next'), h('ul', { class: 'list' },
@@ -482,7 +501,7 @@ if (typeof document !== 'undefined') (function () {
   }
   function markCurrent() {
     document.querySelectorAll('#queue li.cur').forEach((l) => l.classList.remove('cur'));
-    const li = document.querySelector('#queue li[data-i="' + (S.state ? S.state.index : -1) + '"]');
+    const li = document.querySelector('#queue li[data-i="' + curIndex(S.state) + '"]');
     if (li) li.classList.add('cur');
   }
 
@@ -573,7 +592,10 @@ if (typeof document !== 'undefined') (function () {
     } });
   }
   async function renderDrill(my, show, hdr, prov, what, id, backKind) {
-    const url = (off) => '/api/library/' + enc(prov) + '/' + what + '/' + enc(id) + '/tracks?offset=' + off + '&limit=50';
+    // an artist drills into its albums (each opens the album page); album and
+    // playlist drill into tracks
+    const isArtist = what === 'artist';
+    const url = (off) => '/api/library/' + enc(prov) + '/' + what + '/' + enc(id) + '/' + (isArtist ? 'albums' : 'tracks') + '?offset=' + off + '&limit=50';
     let off = 0, shown = 0, title = what === 'album' ? 'Album' : what === 'artist' ? 'Artist' : 'Playlist';
     const ul = h('ul', { class: 'list' }), more = h('button', { class: 'btn', hidden: true }, 'More');
     const back = '#browse/' + enc(prov) + '/' + (backKind || 'playlists');
@@ -582,13 +604,15 @@ if (typeof document !== 'undefined') (function () {
       let r;
       try { r = await api.get(url(off)); } catch (e) { show(head(title, back)); ul.append(msg('error', e.message)); return; }
       if (my !== nav) return;
-      const rows = r.tracks || [];
+      const rows = (isArtist ? r.albums : r.tracks) || [];
       shown += rows.length; off += rows.length;
-      ul.append(...rows.map((t) => item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
-        end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t) })));
+      ul.append(...rows.map(isArtist
+        ? (a) => browseRow(prov, 'albums', a)
+        : (t) => item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
+          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t) })));
       more.hidden = !(r.total != null && shown < r.total);
       more.disabled = false;
-      if (!shown) ul.append(msg('empty', 'No tracks'));
+      if (!shown) ul.append(msg('empty', isArtist ? 'No albums' : 'No tracks'));
     };
     more.onclick = load;
     const extra = what === 'artist' ? null : h('button', { class: 'btn primary', onclick: () => {

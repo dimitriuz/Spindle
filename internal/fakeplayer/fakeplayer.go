@@ -144,11 +144,22 @@ func (f *Fake) submit(c net.Conn, id, op string, params json.RawMessage) {
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j1\",\"operation\":\"queue.list\",\"state\":\"succeeded\",\"result\":{\"ok\":true,\"tracks\":[{\"title\":%q}]}}}\n", id, f.row())
 	case "playnext.list":
 		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j2\",\"operation\":\"playnext.list\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
-	case "make-change":
+	case "queue.clear":
 		// rows change BEFORE the event exists on the wire
 		f.SetRow("Row B")
 		f.Push(`{"event":"runtime.playlist","seq":9,"data":{"revision":8,"playlist_revision":8}}`)
-		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j3\",\"operation\":\"make-change\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
+		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"j3\",\"operation\":\"queue.clear\",\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id)
+	case "track.play", "track.queue":
+		// live v2.4.0: "play a supplied track" takes a track OBJECT; a bare
+		// path string fails invalid_params
+		var tp struct {
+			Track map[string]any `json:"track"`
+		}
+		if json.Unmarshal(params, &tp) != nil || tp.Track == nil {
+			failJob(c, id, op, "invalid parameters")
+			return
+		}
+		fmt.Fprintf(c, "{\"version\":2,\"id\":%q,\"ok\":true,\"job\":{\"id\":\"jt\",\"operation\":%q,\"state\":\"succeeded\",\"result\":{\"ok\":true}}}\n", id, op)
 	case "lyrics":
 		if f.lyrics == "" {
 			failJob(c, id, op, "no lyrics found")
