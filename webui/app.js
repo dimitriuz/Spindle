@@ -337,7 +337,8 @@ if (typeof document !== 'undefined') (function () {
   // the real thing; `art` holds its state between animation frames.
   const art = { path: null, seq: 0, coverOk: false, disc: false, showDisc: false, flipping: false,
     angle: 0, w: 0, a: 0, target: 0, k: 2.2, last: 0, raf: 0, info: null, pref: false,
-    albumKey: '', idx: null, chain: Promise.resolve(), swapping: false };
+    albumKey: '', idx: null, chain: Promise.resolve(), swapping: false,
+    discPending: false }; // true from a track change until the disc of the new album has replaced the old one
   try { art.pref = sessionStorage.getItem('cliamp-disc') === '1'; } catch (e) { /* storage may be off */ }
   const fsOn = () => $('now').classList.contains('fs');
   const fsBoth = () => fsOn() && $('now').dataset.art === 'both';
@@ -419,7 +420,11 @@ if (typeof document !== 'undefined') (function () {
         paintArt();
         if (url) await extendDisc(dir);
         else { $('cover').classList.remove('swap'); discSlide().getAnimations().forEach((an) => an.cancel()); }
-      } finally { art.swapping = false; setSpin(S.state && S.state.state); }
+      } finally {
+        art.swapping = false;
+        if (seq === art.seq) art.discPending = false;
+        setSpin(S.state && S.state.state);
+      }
     });
   }
 
@@ -438,6 +443,7 @@ if (typeof document !== 'undefined') (function () {
     const sameDisc = art.disc && key !== '' && key === art.albumKey;
     art.albumKey = key;
     art.idx = idx;
+    art.discPending = art.disc && !sameDisc; // the disc on show is about to be replaced: do not start it
     // the old pictures stay up until the new ones arrive (or turn out not to exist)
     loadImg(artUrl('cover', p), seq,
       (u) => { $('art-cover').src = u; art.coverOk = true; $('fs-bg').style.backgroundImage = 'url("' + u + '")'; paintArt(); },
@@ -477,8 +483,11 @@ if (typeof document !== 'undefined') (function () {
     art.flipping = false;
   }
   function setSpin(state) {
-    if (!art.swapping) $('cover').classList.toggle('out', state === 'playing'); // the peeking disc slides out while playing
+    const held = art.swapping || art.discPending;
+    if (!held) $('cover').classList.toggle('out', state === 'playing'); // the peeking disc slides out while playing
     const plan = spinPlan(state, reducedMotion());
+    // a resting disc that is about to be replaced must not start turning (or slide out) first
+    if (art.discPending && art.w < 1) plan.target = 0;
     art.target = plan.target;
     art.k = plan.k;
     if (!art.disc) { art.w = art.a = 0; return; } // nothing to turn
