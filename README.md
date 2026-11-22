@@ -1,300 +1,302 @@
-# cliamp-plugin-web
+<p align="center">
+  <img src="webui/icon-192.png" width="96" alt="Spindle icon">
+</p>
 
-A LAN web remote for [cliamp](https://github.com/bjarneo/cliamp), the retro
-terminal music player. A tiny Lua plugin supervises a self-contained Go bridge
-that serves a mobile-friendly web UI over your local network. Control playback,
-scrub, set volume, and edit the live playlist and play-next list from any
-browser — the TUI and the web UI stay in sync within ~1 s in both directions.
+<h1 align="center">Spindle</h1>
+
+<p align="center">
+  A web remote and library browser for <a href="https://github.com/bjarneo/cliamp">cliamp</a>, the retro terminal music player.<br>
+  Control playback, browse Navidrome and radio, watch a record spin on your TV, and make it look like a Walkman, a Winamp skin or a PlayStation.
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/now-playing-desktop.jpg" alt="Spindle on a desktop browser: Now Playing on the left, the queue on the right">
+</p>
+
+Spindle is a small Go program (the *bridge*, binary name `cliamp-web`) plus a
+self-contained web page it serves. The bridge talks to cliamp over its local
+IPC socket, so the page stays in step with the terminal player in both
+directions. There is no login and no JavaScript toolchain: the page is plain
+HTML, CSS and JS embedded in the binary.
 
 ```
-browser ──HTTP/SSE──> cliamp-web (Go bridge, port 8730)
-                          │  cliamp.sock (V2 NDJSON IPC)
-                          ▼
-                        cliamp  ◄── web.lua plugin spawns & supervises it
+browser ──HTTP / SSE──▶ cliamp-web (the bridge, default port 8730)
+                            │  cliamp.sock  (cliamp V2 IPC)
+                            ▼
+                          cliamp  ◀── web.lua plugin starts and supervises the bridge
 ```
 
-## What the phone can do
+## Screenshots
 
-On top of the v1 controls (transport, scrub, volume, shuffle/repeat, playlist
-and play-next editing), v2 adds choosing music itself:
+| Browse your library | An album | Radio with logos and filters |
+|---|---|---|
+| ![Album tiles with sort and filters](docs/screenshots/browse-albums.jpg) | ![An album page with cover, year, genre and tracks](docs/screenshots/album-page.jpg) | ![Radio stations as tiles, with codec, bitrate and country](docs/screenshots/radio-catalog.jpg) |
 
-- **Browse** every provider the player reports (`provider.list`): playlists,
-  albums, artists, radio catalog — capability-adaptive tabs, paginated
-  infinite scroll, drill-down to album/artist track lists with breadcrumb
-  back-navigation.
-- **Search** each searchable provider (debounced typing; results are tracks).
-- **Act on results**: play now (▶) / queue next (+) on any track row; load a
-  playlist or an album into the queue behind a confirm — those ops replace the
-  queue, so the confirm is the guard.
-- **Now Playing**: big round transport, drag-seek bar, volume in dB,
-  shuffle/repeat; the `Now Playing · Queue · Browse · Search` tab shell is
-  pinned to the bottom; Queue also manages the Play-next list (remove, move).
-- Tap a playlist to page through its real tracks; ▶ plays any one,
-  “play playlist” (confirm) replaces the queue
-- Radio stations start on tap (confirm) — no load buttons anywhere
-- Lyrics sheet on the Now Playing page, current line follows the track,
-  tap a line to jump there
-- The tab bar stays pinned; rows truncate with ellipsis and a muted second
-  line; the live connection reconnects by itself (lid close, bridge restart,
-  iOS sleep)
+**Fullscreen on a TV**: cover and spinning disc side by side, large text, tech line, next track. Controls fade out when nobody is touching anything.
 
-Listings refresh on a bounded TTL (60 s default); a provider outage shows an
-inline retry banner that keeps the rows already on screen.
+![Fullscreen player at 1920x1080](docs/screenshots/fullscreen.jpg)
 
+| On a phone | | | |
+|---|---|---|---|
+| ![Now Playing on a phone](docs/screenshots/phone-now.jpg) | ![Album tiles on a phone](docs/screenshots/phone-browse.jpg) | ![The queue on a phone](docs/screenshots/phone-queue.jpg) | ![Settings on a phone](docs/screenshots/phone-settings.jpg) |
 
-## The interface
+**Eleven themes**, each with a light and a dark version and several colours. A theme restyles the buttons, bars, icons and fonts, not only the colours.
 
-The page is served at `/` from three embedded vanilla-JS files (`webui/`:
-`index.html`, `app.css`, `app.js`) — no build step, no framework — ported
-from the MiSTer Subsonic web remote. Its pure core is node-tested:
-`node webui/app_test.js` (part of `make test`). The earlier Vue app is
-frozen under `archive/webui-vue` and no longer served; new features land in
-the vanilla page only.
+![Spindle, Minimal, Hi-Fi, Walkman, Winamp, Neon, OLED, Vinyl lounge, 8-bit, 16-bit, PSX](docs/screenshots/themes.jpg)
 
+| Radio directory search | Equalizer menu | Theme menu |
+|---|---|---|
+| ![Searching the radio directory for jazz](docs/screenshots/radio-search.jpg) | ![Choosing an equalizer preset](docs/screenshots/eq-menu.jpg) | ![The theme menu in the top corner](docs/screenshots/theme-menu.jpg) |
 
-## Artwork
+![The Settings page](docs/screenshots/settings.jpg)
 
-Now Playing shows the album cover with the disc peeking out from behind it, and
-a small artist photo next to the artist name. The disc slides out when playback
-starts and back in when it stops. Tap the cover to flip to the disc; the disc
-spins at 33 1/3 rpm while playing, brakes when you pause and coasts to a stop
-when playback stops.
+## Features
 
-- **Navidrome** (and other Subsonic servers): cover and artist photo come from
-  `getCoverArt`; the disc is the `disc.png` in the album folder, fetched with
-  Navidrome's `dc-<albumId>:1` id (not part of the documented Subsonic API;
-  works on Navidrome 0.64.2, and where it is missing the page simply has no disc).
-- **Local files**: the cover is the picture embedded in the file, else
-  `cover|folder|front|album` + `.jpg|.jpeg|.png|.webp` in the album folder;
-  the disc is `disc.png` or `cdart.png`; the artist photo is `artist.jpg|.png`
-  in the album folder or its parent. Only files of tracks cliamp has reported
-  are ever read.
-- **No disc image?** The bridge draws one from the cover (a printed CD with a
-  clear rim, hub and spindle hole) and caches it, so every album with a cover
-  has a disc to peek, flip and spin. Navidrome answers disc requests with the
-  cover when there is no `disc.png`; that is detected (a real disc is a PNG with
-  transparent corners) and replaced by the generated one.
-- **Radio and other providers** have no artwork: the placeholder stays.
+### Playback
+- Now Playing with cover, a disc that spins at 33⅓ rpm and brakes realistically when you pause, artist photo, drag-to-seek bar, volume in dB, shuffle and repeat (with tooltips that say what a click does).
+- Both directions stay in sync: change something in the terminal player and the page follows within about a second, and the other way round.
+- Synced lyrics with the current line highlighted; tap a line to jump to it.
+- **Fullscreen player** for tablets and TVs: blurred cover backdrop, cover and disc side by side on wide screens, `04 · Title`, album and year, progress, a tech line (`FLAC • 1161 kbps • 16 bit • 44.1 kHz`), the next track, and controls that hide after a few seconds of no mouse, touch, key or gamepad activity. Text scales with the screen so it reads across a room.
+- Smooth disc and cover animations when you skip tracks, with a different motion for next and previous.
 
-Pictures are fetched once and cached under `<data-dir>/art/` (200 MB cap, least
-recently used removed first). The bridge only ever contacts the Navidrome host
-named in the track's own stream URL; nothing goes to outside services.
+### Library
+- **Browse every provider** cliamp has: Navidrome, local, podcasts, radio, and so on. Albums, artists, playlists and a radio catalog adapt to what each provider offers.
+- **Tiles or list** for every collection, remembered per list, with **infinite scroll** (no "load more" buttons).
+- **Sort, filter and search inside lists**: text filter everywhere; albums sort by name, artist, release year or track count and filter by artist, genre, decade and folder; artists sort by album count; the provider's own orders (newest, recently played, most played, starred) are one click away.
+- **Album pages** show the cover, artist, year, genre, track count and length above the tracks. Hovering an album tile reveals a big Play button and an Open button.
+- **Real covers everywhere**: Navidrome albums, artists and playlists by id, embedded and folder art for local files, folder thumbnails in the file browser, a synthetic disc when an album has none.
+- **File browser** over cliamp's music folder with Play and Add to queue for any folder or file, plus a **Folder filter** that tells apart parts of your tree (for example `Rus`, `French`, `Rock`).
+- **Search** every searchable provider.
 
-## Files
+### Radio
+- Station tiles with **logos** found in the public Radio Browser directory (or the stream's own ICY headers), **format, bitrate and country** on every tile, and a **directory search** by name, genre or country.
+- Filters for country, genre, format and language, sorting by popularity or bitrate, and offline stations hidden by default.
+- Live **song titles** from the stream shown as title and artist, with the station underneath.
 
-Under **Local** in Browse, next to Playlists, the **Files** tab is a file browser over the music folder cliamp's own
-browser starts in (`initial_directory` in cliamp's `config.toml`, else `~/Music`;
-override with `cliamp-web serve --music-dir DIR`). cliamp has no operation for
-listing folders, so the bridge, which runs on the same machine, does it.
+### Queue and favorites
+- One **"…" menu on every item** (tracks, albums, artists, playlists, stations, queue rows): **Play** (clears the queue and plays), **Add to queue**, favorite. It is a popover on wide screens and a bottom sheet on phones, and works from the keyboard.
+- Adding an artist or a 12,000-track playlist runs in the background with progress and a Stop button.
+- **Favorites** for tracks, albums, artists, playlists and radio stations, synced with cliamp's own favorites where it has them.
+- A single **Queue** list: played tracks greyed out, the playing one marked, play-next entries first; move, remove and play from here.
 
-- Folders first, then audio files (`flac mp3 m4a aac ogg opus wav wma aiff ape wv
-  mka alac`), in natural order (`Track 2` before `Track 10`); a filter box appears
-  in long folders.
-- **Play** and **Add to queue** work on a folder (everything below it, in order,
-  with progress and Stop) and on a single file. cliamp reads the tags itself, so
-  the tracks are complete in the queue.
-- It is read-only and confined to the music folder: `..`, absolute paths and
-  symlinks that lead out of it are refused, and the page never sees absolute paths.
-  If the folder is missing the tile is simply not shown.
+### Sound and settings
+- **Settings page**: audio output device, equalizer (16 presets and ten bands), mono and playback speed; providers and what they can do; about information; and the choices of this browser.
+- **EQ button** on Now Playing and fullscreen opens a preset menu.
+- Back arrows go to the page you came from (an artist's albums, not the full list).
 
-## Tile view and infinite scroll
+### Themes
+Spindle, Minimal, Hi-Fi, Walkman, Winamp, Neon, OLED black, Vinyl lounge, 8-bit, 16-bit and PSX. Each has light and dark, colour options, its own button and bar shapes, and some its own icon set (thin line or pixel art). A palette button in the top corner switches them; "accent from the cover" tints the controls with a colour from the playing album. The choice is stored in the browser, so a phone and a TV can differ. See [Themes](#themes-1).
 
-Every collection list (Navidrome albums, artists and playlists, local playlists, radio, folders, favorites, an
-artist's albums) has a List / Tiles switch. The choice is remembered per list in the browser. Tiles show a cover:
-Navidrome covers by album, artist or playlist id (the bridge reads the `[navidrome]` login from cliamp's own
-config and never sends it to the browser), and a folder's `cover`/`folder`/`front`/`album` image (or its first
-sub-folder's) as a small cached thumbnail. Everything else gets a coloured placeholder with the kind's icon.
+### Installable
+Add it to a phone's home screen and it opens full screen with its own icon (web manifest and touch icons included).
 
-Lists load as you scroll, one page at a time, with no "More" button. Lists that are already complete (a folder,
-favorites) are drawn in chunks.
+## Requirements
 
-### Sorting and filtering
-
-Every collection page (albums, artists, playlists, an artist's albums, favorites, radio) has a filter box
-and, where it makes sense, sort and facet drop-downs (artist, genre, decade, country, format, ...). They
-work on the rows loaded so far; the list keeps loading while few rows match. Albums also have an
-**Order** drop-down that asks the provider to sort the whole library (name, artist, newest, recently or
-most played, starred). Radio rows show format, bitrate and country from the public Radio Browser
-directory, offline stations are hidden by default, and the search box on the Radio page searches the
-whole directory by name, genre and country.
-
-## Item menu
-
-Every list item has a "..." menu (right-click works too). On a narrow or touch
-screen it is a bottom sheet, on a wide pointer screen a popover next to the
-button; arrows, Home/End, Enter and Escape work, and Escape returns the focus.
-
-- **Play** clears the queue, adds the item and starts playing: a track, an
-  album, a playlist, an artist (all their albums) or a radio station.
-- **Add to queue** puts the item at the end of cliamp's up-next list, in order,
-  with its title, artist and artwork intact. (cliamp's other way to append,
-  `queue {path}`, adds a bare URL with no metadata, so it is not used.) Adding
-  an album, playlist or artist runs in the background with a progress toast and
-  a Stop button; there is no size limit, 12,000 tracks take a few minutes.
-- The **Queue tab is one list in play order**: tracks that already played are greyed
-  at the top, then the current one, then what plays next (cliamp's up-next entries
-  come first), then the rest. With shuffle on, the greyed tracks are the ones that
-  really played, in that order (the bridge records them; cliamp does not expose its
-  shuffle order, so the tracks still to come are listed in list order). The record
-  starts over when you load a different queue and begins empty when the bridge restarts. Rows have Play from here, Play next, Move up/down
-  (inside their group) and Remove.
-- Favorite is in every menu next to the heart.
-
-## Favorites
-
-A heart on anything: tracks, albums, artists, playlists and radio stations, on
-list rows, on the album and artist pages, and on Now Playing. The Favorites tab
-lists them all with a chip per kind.
-
-- **Tracks and stations are cliamp's own favorites.** Hearting a track puts it in
-  cliamp's Favorites playlist (and cliamp stars it on Navidrome); hearting a
-  station adds it to cliamp's favorite stations. The bridge keeps no second copy,
-  so the two never disagree; changes made in the cliamp TUI show up on the next
-  refresh (opening the tab, any change, or every 60 s).
-- **Albums, artists and playlists** have no favorites in cliamp, so the bridge
-  keeps them in `<data-dir>/favorites.json` (title and ids only).
-- A radio station can be favorited only from the radio catalog (a cliamp limit);
-  it can be removed from anywhere, including Now Playing.
-- Existing stars on your Navidrome server are not imported, and albums, artists
-  and playlists are not starred there.
-
-## Fullscreen
-
-The fullscreen button on Now Playing opens a full-window player: blurred cover
-backdrop, artist photo and name, `04 · Title`, album and year, progress, a tech
-line (`FLAC • 1161 kbps • 24 bit • 44.1 kHz`) and the next track. Close it with
-the button, Escape or a swipe down.
-
-- **Wide windows** (at least 700 px, landscape) show the cover and the spinning
-  disc side by side. **Narrow ones** show the cover with the disc peeking out
-  from behind it, sliding out when playback starts and back in when it stops;
-  tap to flip to the disc.
-- **Skipping** next or previous: within one album the platter stumbles to a third
-  of its speed and the motor brings it back; moving to another album changes
-  cover and disc together: the cover slides out and fades (the disc retracts under
-  it when narrow, slides off beside it when wide), the pictures swap while hidden,
-  and the new ones come in from the other side, in the direction you moved.
-- **Tech info** comes from Navidrome (`getSong`), from the FLAC header for local
-  FLAC files, and from the tag type plus average bitrate for other local formats.
-  Anything unknown is simply left out.
-- **Next track** is the first play-next entry, else the following queue row
-  (wrapping on repeat-all). It is hidden with shuffle on, because cliamp's real
-  order is not visible, and with repeat-one.
+- [cliamp](https://github.com/bjarneo/cliamp) with the V2 IPC, tested with **v2.4.0** (the Lua plugin runs in the TUI, and in `--daemon` mode from v2.2). In daemon mode cliamp does not offer terminal theme and visualizer changes, which Spindle does not use.
+- To build: Go 1.23 or newer. Nothing else: no Node, no bundler.
+- A browser with ES2020 and SSE, which means any current phone, tablet or desktop browser.
+- Optional: a Navidrome server configured in cliamp (for covers by id and the Folder filter you need the music folder reachable from the machine running the bridge).
 
 ## Install
 
-1. `cliamp plugins install <user>/cliamp-plugin-web`
-2. install the `cliamp-web` binary (GitHub release, or AUR/PKGBUILD)
-3. `allowed_binaries = "cliamp-web"` + `cliamp plugins trust web`
-4. start cliamp → message shows the URL; open it.
+The usual setup is **the web.lua plugin starts the bridge whenever cliamp starts**. You need the `cliamp-web` binary and the plugin file.
 
-Step 3 goes in `~/.config/cliamp/config.toml`:
+### 1. Get the binary
+
+Build it (any machine with Go; add `GOOS`/`GOARCH` to cross-compile):
+
+```sh
+git clone <this repository> spindle && cd spindle
+make build                       # -> dist/cliamp-web
+sudo install -m755 dist/cliamp-web /usr/local/bin/cliamp-web
+```
+
+For a Raspberry Pi (64-bit OS) build on your computer and copy it over:
+
+```sh
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o cliamp-web ./cmd/cliamp-web
+scp cliamp-web pi@raspberrypi.local:/tmp/
+ssh pi@raspberrypi.local 'sudo install -m755 /tmp/cliamp-web /usr/local/bin/cliamp-web'
+```
+
+On Arch Linux there is a `PKGBUILD` in the repository (`makepkg -si`).
+
+### 2. Install the plugin
+
+```sh
+mkdir -p ~/.config/cliamp/plugins
+cp web.lua ~/.config/cliamp/plugins/web.lua
+```
+
+(Once the repository is published you can use `cliamp plugins install <user>/cliamp-plugin-web` instead.)
+
+### 3. Allow it and trust it
+
+Edit `~/.config/cliamp/config.toml`:
 
 ```toml
 [plugins]
 allowed_binaries = "cliamp-web"
-```
 
-> **Version note:** on cliamp ≤ v2.0.1 the headless `--daemon` mode does **not
-> load Lua plugins** — run the TUI, or upgrade cliamp (≥ v2.2 loads plugins in
-> daemon mode too).
-
-### Plugin configuration
-
-`~/.config/cliamp/config.toml`:
-
-```toml
 [plugins.web]
-port = 8730          # HTTP port (default 8730)
-lan = false          # true ⇒ bind 0.0.0.0 (LAN-visible)
-allowed_hosts = "cliamp.example.lan"  # extra Host values to accept
-binary = "cliamp-web"                  # supervised binary
+port = 8730      # default
+lan  = true      # listen on the network; false = this machine only
 ```
 
-## Running the bridge without the plugin
+Then, once: `cliamp plugins trust web`.
 
-The plugin is only a supervisor; the bridge is a normal binary:
+### 4. Start cliamp and open the page
+
+Start cliamp. It shows the address, or read it from the status file:
 
 ```sh
-cliamp-web serve --port 8730 [--lan] [--socket PATH] [--data-dir DIR] \
-                 [--allowed-hosts LIST] [--verbose]
+jq -r .url ~/.local/share/cliamp/web/status.json     # e.g. http://192.168.1.48:8730
 ```
 
-It writes `~/.local/share/cliamp/web/status.json` (`0600`) with the URL, port
-and pid:
+Open that address on your phone or computer. Add it to the home screen if you like.
+
+### Running cliamp as a service (Raspberry Pi and other always-on players)
+
+If cliamp runs headless on a Pi, a systemd **user** service keeps it (and with it the bridge) up:
+
+```ini
+# ~/.config/systemd/user/cliamp.service
+[Unit]
+Description=cliamp
+
+[Service]
+ExecStart=/usr/local/bin/cliamp --daemon
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
 
 ```sh
-jq -r .url ~/.local/share/cliamp/web/status.json
+systemctl --user enable --now cliamp
+loginctl enable-linger "$USER"          # keep it running without a login session
 ```
 
-Headless recipe (no plugin, cliamp ≥ v2.0.1):
+Two things worth knowing:
+
+- Restarting cliamp itself clears its live queue (cliamp does not save it). To update the bridge, replace the binary and stop only the bridge: `sudo install -m755 cliamp-web /usr/local/bin/cliamp-web; pkill -x cliamp-web`. The plugin starts it again within seconds with the new binary and the queue is untouched.
+- The plugin restarts a crashed bridge at most three times per cliamp session (it forgives earlier crashes after a minute of stable running). If you kill the bridge repeatedly while testing, it stops restarting; start it by hand (`cliamp-web serve --lan &`) or restart cliamp.
+
+### Running the bridge without the plugin
 
 ```sh
-cliamp --daemon --auto-play --playlist <name> &
-cliamp-web serve --lan &
-jq -r .url ~/.local/share/cliamp/web/status.json
+cliamp-web serve --lan
 ```
 
-## Security
+| Flag | Default | Meaning |
+|---|---|---|
+| `--port N` | `8730` | HTTP port |
+| `--lan` | off | listen on all interfaces (`--bind ADDR` picks one) |
+| `--socket PATH` | `~/.config/cliamp/cliamp.sock` | cliamp's IPC socket |
+| `--data-dir DIR` | `~/.local/share/cliamp/web` | status file and the picture cache |
+| `--music-dir DIR` | cliamp's `initial_directory`, else `~/Music` | root of the file browser |
+| `--verbose` | off | log to stderr |
 
-There is **no login**: this is built for a trusted home network, and anyone who
-can reach the port can control playback. Do not expose it to the internet.
-What it does guard against:
+The bridge also reads two things from cliamp's `config.toml` so you configure nothing twice: `initial_directory` (the music folder) and the `[navidrome]` login (`url`, `user`, `password`), which it uses only to fetch cover images from your own server. The login is never logged and never sent to the browser.
 
-- Default bind is `127.0.0.1`; `--lan` / `lan = true` is an explicit opt-in.
-- Any Host header is accepted (the bridge is meant for a trusted network and is often reached through a reverse proxy; `allowed_hosts` is now ignored)
-  (DNS-rebinding guard).
-- State-changing requests must be `application/json` from the same origin, so
-  a web page open in a browser on your LAN cannot fire commands at the bridge.
-- `/api/command` only forwards the operations the UI uses (transport, volume,
-  queue and play-next edits, provider load). Plugin calls, URL loading and
-  destructive ops such as `history.clear` are refused.
-- Stream URLs that carry provider credentials (Navidrome's `u`/`s`/`t`) are
-  scrubbed from everything sent to the browser; the bridge keeps the original
-  and swaps it back in when a track is played or queued.
-- `/api/command` is rate limited per client IP (20 req/s, burst 40).
-- Traffic is plain HTTP. For anything beyond a trusted network, terminate TLS
-  (and add auth) in a reverse proxy and list the hostname:
+### Behind a reverse proxy (HTTPS and a nice name)
+
+The bridge accepts any `Host`, so a proxy just works. The event stream must not be buffered; the bridge already sends `X-Accel-Buffering: no`, which nginx and openresty honour. A Caddy example:
 
 ```
-# Caddyfile
-cliamp.example.lan {
-    reverse_proxy 127.0.0.1:8730
+spindle.example.lan {
+    reverse_proxy 192.168.1.48:8730
 }
 ```
 
-```toml
-[plugins.web]
-lan = true
-allowed_hosts = "cliamp.example.lan"
-```
+## Using it
+
+| Where | What |
+|---|---|
+| **Now Playing** | transport, seek, volume, shuffle, repeat, lyrics, **EQ**, fullscreen |
+| **Queue** | the queue and play-next list; tap to play, "…" to move or remove |
+| **Browse** | providers, collections as tiles or list, files, radio |
+| **Favorites** | everything you hearted, filtered by kind |
+| **Search** | search a provider; for Radio it searches the whole public directory |
+| **Settings** | output device, equalizer, themes, library and about |
+| **Palette button** (top corner) | theme, colour, light or dark |
+
+Tips: tap the cover to flip between cover and disc; long lists keep loading as you scroll; the filter box and the drop-downs above a list work on everything loaded so far (artists, albums and playlists load completely in the background).
+
+## Themes
+
+Pick one with the palette button in the top corner, or in **Settings → Appearance**. Each theme has colour options, a light and a dark version, and can follow the system's light or dark setting.
+
+| Theme | Character |
+|---|---|
+| Spindle | the default look |
+| Minimal | flat, ghost buttons, thin line icons |
+| Hi-Fi | brushed metal, a knob for play, an amber glow |
+| Walkman | cream, chunky keys that press down |
+| Winamp | LCD text, bevelled keys, monospace |
+| Neon | glowing outlines, line icons |
+| OLED black | pure black (or pure white) for maximum contrast |
+| Vinyl lounge | wood and brass, serif headings, line icons |
+| 8-bit | blocky pixels, console font, pixel icons (NES, Game Boy, blue, amber) |
+| 16-bit | shaded bevelled buttons, pixel icons (lilac, Mega Drive blue, orange, jade) |
+| PSX | grey bevelled pads and the four symbols |
+
+Themes are plain data in `webui/themes.js`, icon sets in `webui/icons.js`, and the shape of controls is the `html[data-skin=…]` rules at the end of `webui/app.css`. To add a theme, add an entry with its colours (light and dark), its colour options and a `look`; a test checks that every theme, option and mode stays readable. The 8-bit and 16-bit headings use the Press Start 2P font (SIL Open Font License, in `third_party/`).
+
+## How it works
+
+- The bridge connects to cliamp's socket, keeps a cached copy of the player state and queue, and pushes changes to every browser over **Server-Sent Events** (`/api/events`). The page reconnects by itself after a lid close, a bridge restart or a phone sleeping.
+- Commands go through `POST /api/command`, which forwards **only the operations the page uses**: transport, volume, shuffle, repeat, queue and play-next edits, provider loads, and the settings operations (`device`, `eq`, `mono`, `speed`) with their parameters checked.
+- Multi-step actions (Play or Add to queue for an album, artist, playlist, folder) run in the bridge, one item at a time, with progress events and a Stop button.
+- Pictures are fetched once, cached on disk (200 MB, least recently used goes first) and served with ETags. Station logos come from the public [Radio Browser](https://www.radio-browser.info/) directory.
+- Stream URLs that carry a login are scrubbed before anything reaches the browser; the bridge keeps the original and swaps it back in when you play.
+
+<details>
+<summary>HTTP API (for scripts)</summary>
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/state`, `/api/queue`, `/api/capabilities`, `/api/about` | player state, queue, cliamp's operations, bridge information |
+| `GET /api/events` | event stream: `state`, `playback`, `playlist`, `job`, `player`, `favorites`, `enqueue`, `resync`, `ping` |
+| `POST /api/command` | `{"op": "...", "params": {...}}` for the allowed operations |
+| `GET /api/library/providers`, `/api/library/{provider}/{playlists\|albums\|artists\|catalog}` | browsing (`offset`, `limit`, albums also `sort`) |
+| `GET /api/library/{provider}/{album\|artist\|playlist}/{id}/tracks`, `.../artist/{id}/albums` | drill-down |
+| `GET /api/search/{provider}?q=`, `GET /api/lyrics` | search and lyrics |
+| `POST /api/enqueue`, `POST /api/enqueue/cancel` | Play / Add to queue for tracks, albums, artists, playlists, files, folders |
+| `GET\|PUT /api/favorites` | favorites |
+| `GET /api/files`, `/api/files/root`, `/api/files/groups`, `/api/files/art` | the music folder |
+| `GET /api/art/{cover\|disc\|artist}`, `/api/art/item`, `/api/art/station`, `/api/trackinfo` | pictures and tech info |
+| `GET /api/radio/search`, `POST /api/radio/meta` | radio directory |
+| `GET /api/health` | liveness |
+
+</details>
+
+## Security and privacy
+
+There is **no login**: Spindle is built for a trusted home network, and anyone who can reach the port can control playback. Do not expose it to the internet; if you need remote access, put it behind a reverse proxy that adds authentication.
+
+What it does guard against:
+
+- It listens on `127.0.0.1` unless you opt in with `--lan` / `lan = true`.
+- State-changing requests must be `application/json` from the same origin, so a web page open on your network cannot fire commands at it.
+- `/api/command` refuses everything except the operations listed above; plugin calls, URL loading and destructive operations are not reachable. Requests are rate limited per client.
+- The file browser is confined to your music folder (no `..`, no symlinks out of it) and never returns absolute paths.
+- Logins in stream URLs and in cliamp's config are never sent to the browser, logged, or put in error messages or cache file names.
+
+Outside services: radio station names and stream addresses are sent to the public Radio Browser directory to find logos and details, and your browser loads nothing from third parties. Spindle has no analytics.
 
 ## Development
 
 ```sh
-make build   # dist/cliamp-web — embeds webui/ (go:embed, no JS toolchain)
-make test    # go vet + go test + node webui/app_test.js
+make build     # dist/cliamp-web (embeds webui/, no JS toolchain)
+make test      # go vet + go test + node webui/app_test.js
 ```
 
-Editing the UI means editing `webui/*.{html,css,js}` and rebuilding the
-binary; hard-reload the phone page afterwards. Update the installed dev
-binary: `make build && cp dist/cliamp-web ~/.local/bin/cliamp-web`.
+- `cmd/cliamp-web`: the program; `internal/`: IPC, snapshot cache, HTTP server, art, files, favorites, enqueue worker; `webui/`: the page (`index.html`, `app.css`, `app.js`, `themes.js`, `icons.js`, icons and manifest); `web.lua`: the supervisor plugin.
+- The pure half of the page (list sorting, menus, themes, formatting) is tested in plain Node: `node webui/app_test.js`.
+- After changing `webui/`, rebuild the binary (the files are embedded) and hard-reload the page.
+- Screenshots in this README were taken with headless Chrome against a real player.
 
-## License
+## Credits and license
 
-MIT — see [LICENSE](LICENSE).
-
-### Settings
-
-The **Settings** tab shows and changes: the audio output device (cliamp's `device` operation), the
-equalizer (preset or ten bands), mono and playback speed; the library (providers, Navidrome covers,
-music folder, radio directory); about information (bridge version, address, uptime, connected browsers,
-cliamp status and API, picture cache size); and choices that live in this browser only (default tile or
-list view, how soon fullscreen controls hide, reset of saved sort and view choices). cliamp's `theme`
-and `vis` operations are not offered by its v2 API, so the terminal theme and visualizer are not here.
-
-### Themes
-
-**Settings → Appearance** picks a theme, a colour option and light or dark for this browser (stored in the browser, so a phone and a TV can differ). There are eleven themes, each with a light and a dark version: cliamp (the original), Minimal, Hi-Fi, Walkman, Winamp, Neon, OLED black, Vinyl lounge, 8-bit, 16-bit and PSX. "Light or dark" can be the theme's own, forced, or follow the system. **Accent from the cover** tints the controls with a colour taken from the playing album.
-
-A theme changes more than colours: the shape of the buttons and the play key, the seek bar and knob, panels and borders, the heading font and the icon set (solid, thin line, or pixel art). Themes are plain data in `webui/themes.js`, the icon sets in `webui/icons.js`, and the control shapes are the `html[data-skin=...]` rules at the end of `webui/app.css`. Changing to a theme with another icon set reloads the page once. Fullscreen always keeps light text on its dark backdrop. The 8-bit and 16-bit headings use the Press Start 2P font (SIL Open Font License, `third_party/PressStart2P-OFL.txt`).
+MIT, see [LICENSE](LICENSE). Built for [cliamp](https://github.com/bjarneo/cliamp) by bjarneo. Radio logos and details come from [Radio Browser](https://www.radio-browser.info/). The 8-bit and 16-bit themes use the [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) font by Cody "CodeMan38" Boisclair (SIL Open Font License 1.1).

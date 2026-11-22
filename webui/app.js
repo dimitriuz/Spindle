@@ -912,7 +912,7 @@ if (typeof document !== 'undefined') (function () {
     const st = S.state, song = st && (st.track || st.logical_track);
     $('idle').hidden = !!song;
     $('player').hidden = !song;
-    document.title = song ? ((radioNow(song) || song).title || '') + ' · cliamp' : 'cliamp';
+    document.title = song ? ((radioNow(song) || song).title || '') + ' · Spindle' : 'Spindle';
     if (!st) return;
     if (song) {
       $('trackno').textContent = song.track_number ? String(song.track_number).padStart(2, '0') + ' · ' : '';
@@ -2066,7 +2066,7 @@ if (typeof document !== 'undefined') (function () {
         setRow('Radio directory', h('span', { class: 'dim' }, ab.features && ab.features.radio_directory ? 'radio-browser.info' : 'off'), 'Station logos, details and search'));
       const used = b.art_cache_bytes || 0, max = b.art_cache_max || 0;
       about.replaceChildren(
-        setRow('cliamp-web', h('span', null, (ab.commit ? ab.commit : 'dev') + (ab.modified ? ' +local changes' : '')), ab.built ? 'built ' + new Date(ab.built).toLocaleString() : ''),
+        setRow('Spindle', h('span', null, (ab.commit ? ab.commit : 'dev') + (ab.modified ? ' +local changes' : '')), 'bridge cliamp-web' + (ab.built ? ', built ' + new Date(ab.built).toLocaleString() : '')),
         setRow('Bridge', h('span', { class: 'dim' }, (b.listen || '') + (b.lan ? ' · reachable on the network' : ' · this machine only')), ab.go + ' · ' + ab.os),
         setRow('Running for', h('span', { class: 'dim' }, fmtUptime(ab.uptime))),
         setRow('Browsers connected', h('span', { class: 'dim' }, String(ab.clients == null ? '–' : ab.clients))),

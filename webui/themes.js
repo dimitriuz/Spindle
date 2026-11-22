@@ -14,7 +14,7 @@
   const LIGHT = (o) => Object.assign({ error: '#d93025', heart: '#e0245e', ok: '#188038', scheme: 'light' }, o);
 
   const THEMES = [
-    { id: 'cliamp', name: 'cliamp', blurb: 'The original look', look: { radius: '12px', font: SYS, skin: 'soft' },
+    { id: 'cliamp', name: 'Spindle', blurb: 'The default look', look: { radius: '12px', font: SYS, skin: 'soft' },
       modes: {
         dark: DARK({ bg: '#101418', panel: '#1b2128', art: '#2a313a', text: '#e8eaed', dim: '#9aa0a6', line: '#2a313a' }),
         light: LIGHT({ bg: '#f3f5f8', panel: '#ffffff', art: '#e2e6eb', text: '#14181c', dim: '#5b646e', line: '#dce1e7' }),

@@ -1,7 +1,7 @@
 {
-  "name": "cliamp",
-  "short_name": "cliamp",
-  "description": "Remote control and library browser for cliamp",
+  "name": "Spindle",
+  "short_name": "Spindle",
+  "description": "Web remote and library browser for the cliamp music player",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#101418",
