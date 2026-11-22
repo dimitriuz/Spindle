@@ -217,6 +217,16 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.albumKey(null), '');
   });
 
+  await ok('artPlan: what has to be loaded and animated on a track change', () => {
+    const k = 'A|2011';
+    assert.deepEqual(A.artPlan('', k, false, false), { needCover: true, needDisc: true }, 'first track');
+    assert.deepEqual(A.artPlan(k, k, true, true), { needCover: false, needDisc: false }, 'same album: nothing changes');
+    assert.deepEqual(A.artPlan(k, 'B|2018', true, true), { needCover: true, needDisc: true }, 'another album');
+    assert.deepEqual(A.artPlan(k, k, true, false), { needCover: false, needDisc: true }, 'same album, no disc yet: try again');
+    assert.deepEqual(A.artPlan(k, k, false, true), { needCover: true, needDisc: false }, 'same album, cover missing: try again');
+    assert.deepEqual(A.artPlan('', '', true, true), { needCover: true, needDisc: true }, 'unknown album is never "the same"');
+  });
+
   await ok('trackDir: previous is -1, next and everything else +1', () => {
     assert.equal(A.trackDir(3, 2), -1);
     assert.equal(A.trackDir(2, 3), 1);

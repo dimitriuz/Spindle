@@ -96,6 +96,12 @@ function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : '
 // ---- skipping ----
 // albumKey identifies the disc a track belongs to: same key, same disc.
 const albumKey = (song) => (song && song.album ? song.album + '|' + (song.year || '') : '');
+// artPlan says what a track change has to refresh: pictures belong to the album,
+// so tracks of the same album keep the cover and the disc they have.
+const artPlan = (prevKey, key, coverOk, discOn) => {
+  const same = key !== '' && key === prevKey;
+  return { needCover: !(same && coverOk), needDisc: !(same && discOn) };
+};
 // trackDir is which way the player moved through the queue: -1 for previous.
 const trackDir = (prevIdx, idx) => (prevIdx != null && idx < prevIdx ? -1 : 1);
 // skipDip: a skip makes a turning platter stumble to a third of its speed (the
@@ -194,7 +200,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -385,48 +391,69 @@ if (typeof document !== 'undefined') (function () {
   // cover; the wide fullscreen layout shows it beside the cover.
   const discPeeks = () => $('cover').classList.contains('peek');
 
-  // The disc leaves: back under the cover, or sliding off to the side the
-  // queue is moving away from (next goes left, previous right).
+  // One album change moves the cover and the disc together: both leave (the
+  // disc under the cover, or sliding off to the side the queue is moving away
+  // from), the pictures swap while hidden, both come back from the other side.
+  const OUT = { duration: 260, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' };
+  const IN = { duration: 320, easing: 'cubic-bezier(0,0,.2,1)' };
+  const gone = (dir) => ({ opacity: 0, transform: 'translateX(' + (-dir * 16) + '%) scale(.9)' });
+  const came = (dir) => ({ opacity: 0, transform: 'translateX(' + (dir * 16) + '%) scale(.9)' });
+  const rest = { opacity: 1, transform: 'translateX(0) scale(1)' };
+  const done = (an) => an.finished.catch(() => {});
+  const release = (el) => el.getAnimations().forEach((an) => an.cancel()); // drop the hold from OUT
+
   async function retractDisc(dir) {
-    if (reducedMotion() || $('art-disc').hidden) return;
     if (discPeeks()) { $('cover').classList.add('swap'); $('cover').classList.remove('out'); await sleep(340); return; }
-    try {
-      await discSlide().animate([{ opacity: 1, transform: 'translateX(0) scale(1)' }, { opacity: 0, transform: 'translateX(' + (-dir * 16) + '%) scale(.86)' }],
-        { duration: 260, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).finished;
-    } catch (e) { /* cancelled */ }
+    await done(discSlide().animate([rest, gone(dir)], OUT));
   }
-  // ...and the next one arrives.
   async function extendDisc(dir) {
-    if (reducedMotion()) { $('cover').classList.toggle('out', isPlaying()); }
-    else if (discPeeks()) { $('cover').classList.toggle('out', isPlaying()); await sleep(340); }
-    else {
-      try {
-        await discSlide().animate([{ opacity: 0, transform: 'translateX(' + (dir * 16) + '%) scale(.86)' }, { opacity: 1, transform: 'translateX(0) scale(1)' }],
-          { duration: 320, easing: 'cubic-bezier(0,0,.2,1)' }).finished;
-      } catch (e) { /* cancelled */ }
-    }
-    $('cover').classList.remove('swap');
-    discSlide().getAnimations().forEach((an) => an.cancel()); // drop the hold from retractDisc
+    if (discPeeks()) { $('cover').classList.toggle('out', isPlaying()); await sleep(340); $('cover').classList.remove('swap'); }
+    else await done(discSlide().animate([came(dir), rest], IN));
+    release(discSlide());
   }
-  // Disc changes happen one at a time and in order; a change that has been
-  // overtaken by a newer track is skipped, the newest one does the work.
-  function changeDisc(seq, dir, url) {
+  async function retractCover(dir) {
+    $('fs-bg').animate([{ opacity: 1 }, { opacity: 0.15 }], OUT);
+    // opaque for most of the exit, so the disc sliding under it never shows through
+    await done($('art-cover').animate([rest, { opacity: 1, offset: 0.6 }, gone(dir)], OUT));
+  }
+  async function extendCover(dir) {
+    $('fs-bg').animate([{ opacity: 0.15 }, { opacity: 1 }], IN).finished.catch(() => {}).then(() => release($('fs-bg')));
+    await done($('art-cover').animate([came(dir), { opacity: 1, offset: 0.35 }, rest], IN)); // opaque early, same reason
+    release($('art-cover'));
+  }
+
+  // The pictures of a new album arrive together and are shown in order; a
+  // change overtaken by a newer track is skipped, the newest one does the work.
+  function showAlbum(seq, dir, plan, coverUrl, discUrl) {
     art.chain = art.chain.then(async () => {
       if (seq !== art.seq) return;
       art.swapping = true;
+      const calm = reducedMotion();
+      const hadCover = plan.needCover && art.coverOk && !$('art-cover').hidden && !calm;
+      const hadDisc = plan.needDisc && art.disc && !$('art-disc').hidden && !calm;
       try {
-        await retractDisc(dir);
-        if (url) { $('art-disc').src = url; } else { art.disc = false; art.showDisc = false; art.w = art.a = 0; }
+        if (hadDisc && isPlaying()) { art.w = skipDip(art.w); art.a = 0; } // the platter stumbles
+        await Promise.all([hadCover && retractCover(dir), hadDisc && retractDisc(dir)]);
+        if (plan.needCover) {
+          if (coverUrl) { $('art-cover').src = coverUrl; art.coverOk = true; $('fs-bg').style.backgroundImage = 'url("' + coverUrl + '")'; }
+          else { art.coverOk = false; $('fs-bg').style.backgroundImage = ''; }
+        }
+        if (plan.needDisc) {
+          if (discUrl) { $('art-disc').src = discUrl; if (!art.disc) art.showDisc = art.pref; art.disc = true; }
+          else { art.disc = false; art.showDisc = false; art.w = art.a = 0; }
+        }
         paintArt();
-        if (url) await extendDisc(dir);
-        else { $('cover').classList.remove('swap'); discSlide().getAnimations().forEach((an) => an.cancel()); }
+        await Promise.all([hadCover && coverUrl && !$('art-cover').hidden && extendCover(dir), hadDisc && discUrl && extendDisc(dir)]);
+        if (hadDisc && !discUrl) { $('cover').classList.remove('swap'); release(discSlide()); }
       } finally {
+        $('cover').classList.remove('swap');
         art.swapping = false;
         if (seq === art.seq) art.discPending = false;
         setSpin(S.state && S.state.state);
       }
     });
   }
+  const loadUrl = (url) => new Promise((resolve) => { const im = new Image(); im.onload = () => resolve(url); im.onerror = () => resolve(null); im.src = url; });
 
   function updateArt(song) {
     const p = (song && song.path) || '';
@@ -440,25 +467,25 @@ if (typeof document !== 'undefined') (function () {
       return;
     }
     const key = albumKey(song), idx = curIndex(S.state), dir = trackDir(art.idx, idx);
-    const sameDisc = art.disc && key !== '' && key === art.albumKey;
+    const plan = artPlan(art.albumKey, key, art.coverOk, art.disc);
     art.albumKey = key;
     art.idx = idx;
-    art.discPending = art.disc && !sameDisc; // the disc on show is about to be replaced: do not start it
-    // the old pictures stay up until the new ones arrive (or turn out not to exist)
-    loadImg(artUrl('cover', p), seq,
-      (u) => { $('art-cover').src = u; art.coverOk = true; $('fs-bg').style.backgroundImage = 'url("' + u + '")'; paintArt(); },
-      () => { art.coverOk = false; $('fs-bg').style.backgroundImage = ''; paintArt(); });
+    art.discPending = art.disc && plan.needDisc; // the disc on show is about to be replaced: do not start it
     loadImg(artUrl('artist', p), seq, (u) => { $('artist-img').src = u; $('artist-img').hidden = false; }, () => { $('artist-img').hidden = true; });
-    if (sameDisc) {
-      // the same disc: no new picture, the platter just stumbles and recovers
-      if (isPlaying() && !reducedMotion()) { art.w = skipDip(art.w); art.a = 0; setSpin('playing'); }
-    } else {
-      loadImg(artUrl('disc', p), seq,
-        (u) => {
-          if (!art.disc) { $('art-disc').src = u; art.showDisc = art.pref; art.disc = true; paintArt(); setSpin(S.state && S.state.state); }
-          else { if (isPlaying() && !reducedMotion()) { art.w = skipDip(art.w); art.a = 0; } changeDisc(seq, dir, u); }
-        },
-        () => { if (art.disc) changeDisc(seq, dir, null); else { art.showDisc = false; paintArt(); } });
+    if (plan.needCover && !art.coverOk) {
+      // nothing on show to animate away: the cover appears as soon as it is loaded
+      plan.needCover = false;
+      loadUrl(artUrl('cover', p)).then((cu) => {
+        if (seq !== art.seq || !cu) return;
+        $('art-cover').src = cu; art.coverOk = true; $('fs-bg').style.backgroundImage = 'url("' + cu + '")'; paintArt();
+      });
+    }
+    if (plan.needCover || plan.needDisc) {
+      Promise.all([plan.needCover ? loadUrl(artUrl('cover', p)) : null, plan.needDisc ? loadUrl(artUrl('disc', p)) : null])
+        .then(([cu, du]) => { if (seq === art.seq) showAlbum(seq, dir, plan, cu, du); });
+    } else if (isPlaying() && !reducedMotion()) {
+      // same album, same pictures: the platter just stumbles and recovers
+      art.w = skipDip(art.w); art.a = 0; setSpin('playing');
     }
     const dur = Number(S.state && S.state.duration) || 0;
     api.get('/api/trackinfo?path=' + encodeURIComponent(p) + (dur ? '&duration=' + dur : ''))

@@ -92,9 +92,10 @@ the button, Escape or a swipe down.
   from behind it, sliding out when playback starts and back in when it stops;
   tap to flip to the disc.
 - **Skipping** next or previous: within one album the platter stumbles to a third
-  of its speed and the motor brings it back; moving to another album retracts the
-  disc (under the cover when narrow, sliding off to the side when wide), swaps the
-  picture and brings the new disc in, in the direction you moved.
+  of its speed and the motor brings it back; moving to another album changes
+  cover and disc together: the cover slides out and fades (the disc retracts under
+  it when narrow, slides off beside it when wide), the pictures swap while hidden,
+  and the new ones come in from the other side, in the direction you moved.
 - **Tech info** comes from Navidrome (`getSong`), from the FLAC header for local
   FLAC files, and from the tag type plus average bitrate for other local formats.
   Anything unknown is simply left out.
