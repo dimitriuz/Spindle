@@ -71,6 +71,7 @@ func (c *Config) heartbeat() time.Duration {
 type serverState struct {
 	cfg     Config
 	started time.Time
+	sizes   sizedCache
 }
 
 // New assembles the HTTP handler. The request guard (protect) wraps every
@@ -99,9 +100,9 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
 	mux.Handle("GET /api/radio/search", s.protect(http.HandlerFunc(s.radioSearch)))
 	mux.Handle("POST /api/radio/meta", s.protect(http.HandlerFunc(s.radioMeta)))
-	mux.Handle("GET /api/art/station", s.protect(http.HandlerFunc(s.stationArt)))
-	mux.Handle("GET /api/art/item", s.protect(http.HandlerFunc(s.itemArt)))
-	mux.Handle("GET /api/art/{kind}", s.protect(http.HandlerFunc(s.art)))
+	mux.Handle("GET /api/art/station", s.protect(checkSize(http.HandlerFunc(s.stationArt))))
+	mux.Handle("GET /api/art/item", s.protect(checkSize(http.HandlerFunc(s.itemArt))))
+	mux.Handle("GET /api/art/{kind}", s.protect(checkSize(http.HandlerFunc(s.art))))
 	mux.Handle("GET /api/trackinfo", s.protect(http.HandlerFunc(s.trackInfo)))
 	mux.Handle("GET /api/favorites", s.protect(http.HandlerFunc(s.favoritesList)))
 	mux.Handle("PUT /api/favorites", s.protect(http.HandlerFunc(s.favoritesSet)))
@@ -109,7 +110,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("POST /api/enqueue/cancel", s.protect(http.HandlerFunc(s.enqueueCancel)))
 	mux.Handle("GET /api/files/groups", s.protect(http.HandlerFunc(s.filesGroups)))
 	mux.Handle("GET /api/files/root", s.protect(http.HandlerFunc(s.filesRoot)))
-	mux.Handle("GET /api/files/art", s.protect(http.HandlerFunc(s.folderArt)))
+	mux.Handle("GET /api/files/art", s.protect(checkSize(http.HandlerFunc(s.folderArt))))
 	mux.Handle("GET /api/files", s.protect(http.HandlerFunc(s.filesList)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))

@@ -41,7 +41,7 @@ func (s *serverState) art(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
 		return
 	}
-	writeImage(w, r, img)
+	s.sendImage(w, r, img)
 }
 
 // trackInfo serves GET /api/trackinfo?path=&duration=: codec, bitrate and so
@@ -109,7 +109,7 @@ func (s *serverState) itemArt(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
 		return
 	}
-	writeImage(w, r, img)
+	s.sendImage(w, r, img)
 }
 
 // StationArtSource finds the logo of an internet radio station by name.
@@ -141,7 +141,7 @@ func (s *serverState) stationArt(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
 		return
 	}
-	writeImage(w, r, img)
+	s.sendImage(w, r, img)
 }
 
 // StationMetaSource describes catalog stations (codec, bitrate, tags, country, votes).
