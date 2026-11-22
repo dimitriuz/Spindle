@@ -337,3 +337,32 @@ func TestCoverFileSkipsHugeImages(t *testing.T) {
 		t.Fatalf("an 11 MB cover is not a thumbnail candidate: %v", err)
 	}
 }
+
+func TestGroupsMapsSecondLevelFoldersToTheirTopFolder(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"Rus/Земфира/10 мальчиков", "Rus/Би-2", "French/Chante France", "Rock/Deep Purple", "Rock/Various Artists", "Other/Various Artists", ".hidden/Ghost"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "Rus", "readme.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := b.Groups()
+	want := map[string]string{"земфира": "Rus", "би-2": "Rus", "chante france": "French", "deep purple": "Rock"}
+	for k, v := range want {
+		if g[k] != v {
+			t.Errorf("%q: got %q want %q", k, g[k], v)
+		}
+	}
+	if _, ok := g["various artists"]; ok {
+		t.Error("a name under two top folders is ambiguous and must be left out")
+	}
+	if _, ok := g["ghost"]; ok || g["10 мальчиков"] != "" {
+		t.Error("hidden folders and third-level folders are not listed")
+	}
+}

@@ -20,6 +20,9 @@ type fakeFiles struct {
 }
 
 func (f *fakeFiles) RootName() string { return f.root }
+func (f *fakeFiles) Groups() map[string]string {
+	return map[string]string{"земфира": "Rus"}
+}
 func (f *fakeFiles) List(rel string) (files.Listing, error) {
 	f.got = rel
 	return f.l, f.err
@@ -101,5 +104,17 @@ func TestFilesBodyNeverShowsAnAbsolutePath(t *testing.T) {
 	}
 	if rec := artGet(filesServer(t, b), "/api/files?path=..%2F..", nil); rec.Code != 400 {
 		t.Fatalf("traversal: %d", rec.Code)
+	}
+}
+
+func TestFilesGroupsRoute(t *testing.T) {
+	cfg := guardedConfig(t)
+	cfg.Files = &fakeFiles{root: "music"}
+	rec := artGet(New(cfg), "/api/files/groups", nil)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"земфира":"Rus"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	if rec := artGet(New(guardedConfig(t)), "/api/files/groups", nil); rec.Code != 404 {
+		t.Fatalf("feature off: %d", rec.Code)
 	}
 }

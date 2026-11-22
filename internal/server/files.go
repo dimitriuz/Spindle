@@ -11,6 +11,7 @@ import (
 type FilesSource interface {
 	RootName() string
 	List(rel string) (files.Listing, error)
+	Groups() map[string]string
 }
 
 func (s *serverState) filesOff(w http.ResponseWriter) bool {
@@ -46,4 +47,18 @@ func (s *serverState) filesList(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error", "code": "internal_error"})
 	}
+}
+
+// filesGroups serves GET /api/files/groups: which top-level music folder each
+// artist or album folder lives in, so the library pages can filter by it.
+func (s *serverState) filesGroups(w http.ResponseWriter, r *http.Request) {
+	if s.filesOff(w) {
+		return
+	}
+	g := s.cfg.Files.Groups()
+	if g == nil {
+		g = map[string]string{}
+	}
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	writeJSON(w, http.StatusOK, map[string]any{"groups": g})
 }

@@ -101,6 +101,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("PUT /api/favorites", s.protect(http.HandlerFunc(s.favoritesSet)))
 	mux.Handle("POST /api/enqueue", s.protect(http.HandlerFunc(s.enqueueStart)))
 	mux.Handle("POST /api/enqueue/cancel", s.protect(http.HandlerFunc(s.enqueueCancel)))
+	mux.Handle("GET /api/files/groups", s.protect(http.HandlerFunc(s.filesGroups)))
 	mux.Handle("GET /api/files/root", s.protect(http.HandlerFunc(s.filesRoot)))
 	mux.Handle("GET /api/files/art", s.protect(http.HandlerFunc(s.folderArt)))
 	mux.Handle("GET /api/files", s.protect(http.HandlerFunc(s.filesList)))

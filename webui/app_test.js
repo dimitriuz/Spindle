@@ -289,7 +289,7 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(names({ q: 'a · 20' }), 'Album 2', 'the text filter reads title and subtitle, ignoring case');
     assert.equal(names({ q: 'zzz' }), '');
     const al = A.LIST_VIEWS.albums;
-    assert.deepEqual(al.facets.map((f) => f.id), ['artist', 'genre', 'decade', 'language']);
+    assert.deepEqual(al.facets.map((f) => f.id), ['artist', 'genre', 'decade', 'folder', 'language']);
     assert.equal(names({ facets: { decade: '1990s' } }, al), 'Album 10');
     assert.deepEqual(A.ALBUM_ORDERS[0], ['', 'All albums']);
     assert.ok(A.ALBUM_ORDERS.every(([v]) => /^[A-Za-z]*$/.test(v)), 'orders are plain words the bridge accepts');

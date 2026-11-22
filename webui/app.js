@@ -149,9 +149,9 @@ const LIST_VIEWS = {
   albums: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'artist', label: 'Artist', cmp: (a, b) => textCmp('artist')(a, b) || nameCmp(a, b) },
     { id: 'new', label: 'Release year, newest', cmp: numCmp('year', true) }, { id: 'old', label: 'Release year, oldest', cmp: numCmp('year', false) },
     { id: 'tracks', label: 'Most tracks', cmp: numCmp('tracks', true) }],
-    facets: [attrFacet('artist', 'Artist'), attrFacet('genre', 'Genre'), attrFacet('decade', 'Decade'), attrFacet('language', 'Language')] },
-  artists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'albums', label: 'Most albums', cmp: numCmp('albums', true) }], facets: [attrFacet('language', 'Language')] },
-  playlists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'tracks', label: 'Most tracks', cmp: numCmp('tracks', true) }], facets: [attrFacet('section', 'Section'), attrFacet('language', 'Language')] },
+    facets: [attrFacet('artist', 'Artist'), attrFacet('genre', 'Genre'), attrFacet('decade', 'Decade'), attrFacet('folder', 'Folder'), attrFacet('language', 'Alphabet')] },
+  artists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'albums', label: 'Most albums', cmp: numCmp('albums', true) }], facets: [attrFacet('folder', 'Folder'), attrFacet('language', 'Alphabet')] },
+  playlists: { search: true, loadAll: true, sorts: [SORT_NAME, { id: 'tracks', label: 'Most tracks', cmp: numCmp('tracks', true) }], facets: [attrFacet('section', 'Section'), attrFacet('language', 'Alphabet')] },
   'artist-albums': { search: true, loadAll: true, sorts: [{ id: 'new', label: 'Newest first', cmp: numCmp('year', true) }, { id: 'old', label: 'Oldest first', cmp: numCmp('year', false) }, SORT_NAME] },
   catalog: { search: true, sorts: [SORT_NAME] },
   favorites: { search: true, sorts: [SORT_NAME] },
@@ -1584,6 +1584,7 @@ if (typeof document !== 'undefined') (function () {
     if (ordered) { try { order = localStorage.getItem(orderKey) || ''; } catch (e) { /* storage may be off */ } if (!ALBUM_ORDERS.some((o) => o[0] === order)) order = ''; }
     const makeCol = () => collection({ my, key: viewModeKey('browse', prov, kind), modes: true, empty: 'Nothing here',
       page: async () => {
+        if (!radio) await loadGroups();
         const r = await api.get(listUrl(prov, kind, radio ? seenIds.size : off) + (order ? '&sort=' + order : ''));
         let rows = r[kind] || r.playlists || [];
         if (radio) {
@@ -1671,6 +1672,15 @@ if (typeof document !== 'undefined') (function () {
       meta: hit, dead: !hit.online, heart: hh, onTap: play,
       more: () => ({ spec: { kind: 'radio', fav: favState(hh) }, run: { play, fav: () => hh.toggle() } }) };
   }
+  // Which top-level folder of the music directory (Rus, French, Rock, ...) a library artist or album
+  // belongs to, matched by name; empty when the library is not that folder tree or the name is ambiguous.
+  let folderGroups = {}, groupsAt = 0;
+  async function loadGroups() {
+    if (Date.now() - groupsAt < 300000) return;
+    groupsAt = Date.now();
+    try { folderGroups = (await api.get('/api/files/groups')).groups || {}; } catch (e) { /* no music folder: the facet stays empty */ }
+  }
+  const folderOf = (artist, name) => folderGroups[String(artist || '').trim().toLowerCase()] || folderGroups[String(name || '').trim().toLowerCase()] || '';
   // the entry options of one row of a provider list
   function browseOpts(prov, kind, row) {
     const name = rowTitle(row);
@@ -1679,7 +1689,8 @@ if (typeof document !== 'undefined') (function () {
       const hh = heartBtn({ key: favKey(k, prov, row.id), req: { kind: k, provider: prov, id: row.id, title: name, subtitle: k === 'artist' ? '' : (row.artist || '') } });
       const attrs = { artist: row.artist || '', genre: row.genre || '', year: Number(row.year) || 0, decade: row.year ? Math.floor(row.year / 10) * 10 + 's' : '',
         tracks: Number(row.track_count) || 0, albums: Number(row.album_count) || 0, section: row.section || '',
-        language: scriptOf(name + ' ' + (row.artist || '')) };
+        language: scriptOf(name + ' ' + (row.artist || '')),
+        folder: folderOf(k === 'artist' ? name : row.artist, name) };
       return { title: name, sub, end, href, tkind, attrs, art: itemArtUrl(k, prov, row.id), heart: hh, more: collectionMore(k, prov, row.id, hh),
         onPlay: k === 'album' ? () => enq({ kind: 'album', provider: prov, id: row.id, mode: 'play' }) : null };
     };

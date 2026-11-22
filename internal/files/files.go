@@ -125,6 +125,43 @@ func (b *Browser) Resolve(rel string) (abs string, dir bool, err error) {
 }
 
 // kind classifies a directory entry, following symlinks that stay inside the root.
+// Groups maps the folders one level below each top-level folder (the artist
+// or album folders of "Rus", "French", "Rock", ...) to that top-level folder,
+// lowercased. A name found under two top-level folders is left out: it says
+// nothing about where its music belongs. Used to tell which part of the music
+// folder a library album or artist comes from.
+func (b *Browser) Groups() map[string]string {
+	top, err := b.List("")
+	if err != nil {
+		return nil
+	}
+	out := map[string]string{}
+	ambiguous := map[string]bool{}
+	for _, t := range top.Entries {
+		if !t.Dir {
+			continue
+		}
+		sub, err := b.List(t.Name)
+		if err != nil {
+			continue
+		}
+		for _, e := range sub.Entries {
+			if !e.Dir {
+				continue
+			}
+			k := strings.ToLower(strings.TrimSpace(e.Name))
+			if prev, ok := out[k]; ok && prev != t.Name {
+				ambiguous[k] = true
+			}
+			out[k] = t.Name
+		}
+	}
+	for k := range ambiguous {
+		delete(out, k)
+	}
+	return out
+}
+
 func (b *Browser) kind(dir string, de fs.DirEntry) (isDir, ok bool) {
 	full := filepath.Join(dir, de.Name())
 	if de.Type()&fs.ModeSymlink != 0 {
