@@ -167,6 +167,9 @@ function viewRows(all, view, sorts, facets) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// The theme engine (themes.js is loaded first in the page; node loads it by path)
+const TH = typeof window !== 'undefined' && window.CLIAMP_THEMES ? window.CLIAMP_THEMES : (typeof require === 'function' ? require('./themes.js') : null);
+
 // ---- settings ----
 // deviceLabel: a readable name for a PulseAudio/PipeWire sink such as
 // "alsa_output.usb-Topping_E30-00.HiFi__Headphones__sink" -> "Topping E30 · HiFi Headphones"
@@ -641,6 +644,7 @@ if (typeof document !== 'undefined') (function () {
     box.tabIndex = flippable ? 0 : -1;
     if (flippable) { box.setAttribute('role', 'button'); box.setAttribute('aria-label', discOnly ? 'Disc, tap for cover' : 'Cover, tap for disc'); }
     else { box.removeAttribute('role'); box.setAttribute('aria-label', 'Cover'); }
+    if (!art.coverOk) syncCoverAccent();
     $('art-disc').hidden = !discShown;
     $('art-cover').hidden = !coverShown;
     box.querySelector('.ph').hidden = discOnly || coverShown;
@@ -985,6 +989,7 @@ if (typeof document !== 'undefined') (function () {
       openMenu({ trigger: e.currentTarget, title: 'Equalizer', subtitle: cur, spec: { kind: 'eq', current: cur },
         run: Object.fromEntries(EQ_PRESETS.map((n) => ['eq:' + n, () => cmd('eq', { name: n })])) });
     };
+    $('art-cover').addEventListener('load', syncCoverAccent);
     $('b-eq').onclick = openEq;
     $('b-eq-fs').onclick = openEq;
     $('b-shuffle').onclick = () => S.state && cmd('shuffle', { name: S.state.shuffle ? 'off' : 'on' });
@@ -1905,6 +1910,49 @@ if (typeof document !== 'undefined') (function () {
   const chipRow = (items, current, pick, fmt) => h('div', { class: 'chips' }, items.map((v) =>
     h('button', { class: 'chip', 'aria-pressed': String(String(v) === String(current)), onclick: () => pick(v) }, fmt ? fmt(v) : String(v))));
 
+  // Appearance: theme cards, colour options, light/dark mode, accent from the cover. It redraws itself.
+  function appearanceCard() {
+    const card = setCard('Appearance');
+    const paint = () => {
+      const cur = TH.byId(TH.get(TH.KEYS.theme, 'cliamp'));
+      const sysDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+      const modePref = TH.get(TH.KEYS.mode, 'auto');
+      const optOf = (t) => TH.get(TH.KEYS.opt(t.id), t.options[0].id);
+      const choose = (fn) => { fn(); TH.apply(); syncCoverAccent(); paint(); };
+      const cards = h('div', { class: 'themes' }, TH.THEMES.map((t) => {
+        const v = TH.themeVars(t, optOf(t), TH.resolveMode(t, modePref, sysDark));
+        return h('button', { class: 'theme', 'aria-pressed': String(t.id === cur.id), title: t.blurb, onclick: () => choose(() => TH.set(TH.KEYS.theme, t.id)) },
+          h('span', { class: 'tprev', style: 'background:' + v['--bg'] }, h('i', { style: 'background:' + v['--text'] + ';opacity:.8' }), h('b', { style: 'background:' + v['--accent'] })),
+          h('span', { class: 'tname2' }, t.name), h('span', { class: 'dim ssub' }, t.blurb));
+      }));
+      const mode = TH.resolveMode(cur, modePref, sysDark);
+      const swatches = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Colour' }, cur.options.map((o) =>
+        h('button', { class: 'swatch', 'aria-pressed': String(o.id === optOf(cur)), title: o.name, 'aria-label': o.name,
+          style: 'background:' + TH.accentFor(o, cur.modes[mode].scheme), onclick: () => choose(() => TH.set(TH.KEYS.opt(cur.id), o.id)) })));
+      card.replaceChildren(...[h('h3', null, 'Appearance'), cards, setRow('Colour', swatches, cur.options.find((o) => o.id === optOf(cur)).name),
+        TH.hasBoth(cur) ? setRow('Light or dark', chipRow(['auto', 'light', 'dark'], modePref, (v) => choose(() => TH.set(TH.KEYS.mode, v)), (v) => ({ auto: 'Follow system', light: 'Light', dark: 'Dark' }[v]))) : null,
+        setRow('Accent from the cover', switchBtn(TH.get(TH.KEYS.cover, '0') === '1', (v) => { TH.set(TH.KEYS.cover, v ? '1' : '0'); TH.apply(); syncCoverAccent(); }, 'Accent from the album cover'),
+          'Tints the controls with a colour from the playing album')].filter(Boolean));
+    };
+    paint();
+    return card;
+  }
+
+  // the accent taken from the playing cover, when that option is on
+  function syncCoverAccent() {
+    const on = TH.get(TH.KEYS.cover, '0') === '1';
+    const img = $('art-cover');
+    if (!on || !art.coverOk || !img || !img.complete || !img.naturalWidth) { TH.setCoverAccent(null); return; }
+    try {
+      const c = document.createElement('canvas');
+      c.width = c.height = 32;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(img, 0, 0, 32, 32);
+      const dark = (document.documentElement.style.colorScheme || 'dark') === 'dark';
+      TH.setCoverAccent(TH.pickAccent(g.getImageData(0, 0, 32, 32).data, dark));
+    } catch (e) { TH.setCoverAccent(null); }
+  }
+
   async function renderSettings() {
     const root = $('settings'), my = ++setSeq;
     const st = () => S.state || {};
@@ -1957,6 +2005,7 @@ if (typeof document !== 'undefined') (function () {
 
     root.replaceChildren(
       h('div', { class: 'head' }, h('h2', null, 'Settings')),
+      appearanceCard(),
       setCard('Audio output', devList, h('p', { class: 'dim snote' }, 'Switching restarts the audio stream; playback may pause for a moment.')),
       setCard('Sound', setRow('Equalizer', presetSel), h('div', { class: 'eq' }, sliders.map((x) => x.el)),
         setRow('Mono', monoSw, 'Mix both channels into one'), setRow('Speed', speedChips)),

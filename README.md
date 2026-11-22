@@ -292,3 +292,7 @@ music folder, radio directory); about information (bridge version, address, upti
 cliamp status and API, picture cache size); and choices that live in this browser only (default tile or
 list view, how soon fullscreen controls hide, reset of saved sort and view choices). cliamp's `theme`
 and `vis` operations are not offered by its v2 API, so the terminal theme and visualizer are not here.
+
+### Themes
+
+**Settings → Appearance** picks a theme and a colour option for this browser (it is stored in the browser, so a phone and a TV can differ): cliamp (the original), Minimal (paper or ink), Hi-Fi, Walkman, Winamp, Neon and OLED black. Minimal can follow the system's light or dark setting. **Accent from the cover** tints the controls with a colour taken from the playing album. Themes are plain data in `webui/themes.js`; fullscreen always keeps light text on its dark backdrop.

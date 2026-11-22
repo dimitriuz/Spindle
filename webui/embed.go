@@ -10,7 +10,7 @@ import (
 	"io/fs"
 )
 
-//go:embed index.html app.js app.css icon.svg icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png favicon-32.png manifest.json
+//go:embed index.html app.js app.css themes.js icon.svg icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png favicon-32.png manifest.json
 var webFS embed.FS
 
 // FS returns the embedded page rooted at index.html.

@@ -329,6 +329,50 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.repeatTip('weird'), 'Repeat: off. Click for repeat all', 'an unknown mode reads as off');
     assert.equal(A.repeatTip(undefined), 'Repeat: off. Click for repeat all');
   });
+  await ok('themes: every theme, option and mode is readable', () => {
+    const T = require('./themes.js');
+    const lum = T.luminance, ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    assert.equal(T.THEMES.length, 7, 'cliamp plus the six themes');
+    for (const t of T.THEMES) {
+      assert.ok(t.options.length >= 1, t.id + ' has colour options');
+      for (const mode of Object.keys(t.modes)) {
+        for (const o of t.options) {
+          const v = T.themeVars(t, o.id, mode), where = t.id + '/' + o.id + '/' + mode;
+          assert.ok(ratio(v['--text'], v['--bg']) >= 7, where + ' text on page ' + ratio(v['--text'], v['--bg']).toFixed(1));
+          assert.ok(ratio(v['--text'], v['--panel']) >= 7, where + ' text on panel');
+          assert.ok(ratio(v['--dim'], v['--bg']) >= 3.5, where + ' dim text on page ' + ratio(v['--dim'], v['--bg']).toFixed(1));
+          assert.ok(ratio(v['--dim'], v['--panel']) >= 3.2, where + ' dim text on panel ' + ratio(v['--dim'], v['--panel']).toFixed(1));
+          assert.ok(ratio(v['--accent'], v['--bg']) >= 2.4, where + ' accent on page ' + ratio(v['--accent'], v['--bg']).toFixed(1));
+          assert.ok(ratio(v['--on-accent'], v['--accent']) >= 4.5, where + ' text on accent');
+          for (const k of ['--bg', '--panel', '--art', '--text', '--dim', '--line', '--accent', '--error', '--heart', '--ok']) assert.match(v[k], /^#[0-9a-f]{6}$/i, where + ' ' + k);
+        }
+      }
+    }
+  });
+  await ok('themes: mode, options and the cover accent', () => {
+    const T = require('./themes.js');
+    const minimal = T.byId('minimal'), hifi = T.byId('hifi');
+    assert.equal(T.byId('nope').id, 'cliamp', 'an unknown theme falls back to the default');
+    assert.equal(T.resolveMode(minimal, 'auto', true), 'dark');
+    assert.equal(T.resolveMode(minimal, 'auto', false), 'light');
+    assert.equal(T.resolveMode(minimal, 'light', true), 'light');
+    assert.equal(T.resolveMode(hifi, 'light', false), 'dark', 'a dark-only theme ignores the preference');
+    assert.equal(T.resolveMode(T.byId('walkman'), 'dark', true), 'light', 'a light-only theme too');
+    assert.notEqual(T.themeVars(minimal, 'blue', 'light')['--accent'], T.themeVars(minimal, 'blue', 'dark')['--accent'], 'accents differ by mode');
+    assert.equal(T.themeVars(hifi, 'nope', 'dark')['--accent'], '#ffb04a', 'an unknown option uses the first');
+    assert.equal(T.themeVars(T.byId('winamp'), 'amber', 'dark')['--text'], '#ffd98a', 'an option can change more than the accent');
+    assert.equal(T.themeVars(T.byId('neon'), 'cyan', 'dark')['--glow'].startsWith('0 0 22px'), true);
+    assert.equal(T.themeVars(hifi, 'amber', 'dark')['--glow'], 'none');
+    // cover accent: a mostly red picture gives a red-ish accent; grey gives none
+    const px = (r, g, b, n) => new Uint8ClampedArray(Array.from({ length: n }, () => [r, g, b, 255]).flat());
+    const red = T.pickAccent(px(200, 30, 30, 64), true);
+    assert.match(red, /^#[0-9a-f]{6}$/);
+    assert.ok(parseInt(red.slice(1, 3), 16) > parseInt(red.slice(3, 5), 16) + 40, 'red stays red: ' + red);
+    assert.equal(T.pickAccent(px(128, 128, 128, 64), true), null, 'grey has no colour');
+    assert.equal(T.pickAccent(px(0, 0, 0, 64), true), null);
+    assert.equal(T.pickAccent(new Uint8ClampedArray(0), true), null);
+    assert.ok(T.luminance(T.pickAccent(px(30, 60, 200, 64), true)) > T.luminance(T.pickAccent(px(30, 60, 200, 64), false)), 'lighter on dark themes than on light ones');
+  });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);
     assert.deepEqual([f.name, f.artist, f.year, f.genre, f.count, f.secs], ['EP', 'M', 1987, 'Metal', 2, 797]);
