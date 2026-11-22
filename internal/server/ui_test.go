@@ -86,3 +86,26 @@ func TestUINilIsPlain404(t *testing.T) {
 		t.Fatalf("nil UI: %d", rec.Code)
 	}
 }
+
+func TestAppIconsAndManifestAreEmbeddedAndServed(t *testing.T) {
+	cfg := guardedConfig(t)
+	cfg.UI = webui.FS()
+	h := New(cfg)
+	want := map[string]string{
+		"/icon.svg": "image/svg+xml", "/icon-192.png": "image/png", "/icon-512.png": "image/png",
+		"/icon-maskable-512.png": "image/png", "/apple-touch-icon.png": "image/png", "/favicon-32.png": "image/png",
+		"/manifest.json": "application/json",
+	}
+	for path, ct := range want {
+		rec := uiGet(h, path)
+		if rec.Code != 200 || !strings.HasPrefix(rec.Header().Get("Content-Type"), ct) || rec.Body.Len() < 200 {
+			t.Errorf("%s: %d %q %d bytes", path, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
+		}
+	}
+	page := uiGet(h, "/").Body.String()
+	for _, link := range []string{`rel="icon"`, `rel="apple-touch-icon"`, `rel="manifest"`} {
+		if !strings.Contains(page, link) {
+			t.Errorf("page lacks %s", link)
+		}
+	}
+}

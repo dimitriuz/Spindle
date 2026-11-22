@@ -148,6 +148,8 @@ input[type=range] { flex: 1; height: 44px; background: transparent; accent-color
   #now.fs #knob { width: 1.6vh; height: 1.6vh; min-width: 16px; min-height: 16px; margin: -.8vh 0 0 -.8vh; }
   #now.fs .transport .ic { width: 5vw; height: 5vw; max-width: 110px; max-height: 110px; }
   #now.fs .transport .ic svg { width: 50%; height: 50%; }
+  #now.fs .transport #b-eq-fs.ic { width: auto; min-width: 5vw; padding: 0 1.2vw; }
+  #now.fs .transport #b-eq-fs .eqtxt { font-size: clamp(20px, 2.2vw, 48px); }
   #now.fs .transport .ic.big { width: 7vw; height: 7vw; max-width: 150px; max-height: 150px; }
   body.fs-open .mpop { width: clamp(244px, 16vw, 420px); }
   body.fs-open .mpop .mi { font-size: clamp(15px, 1.2vw, 26px); min-height: clamp(42px, 3.2vh, 58px); }
@@ -328,6 +330,10 @@ li.played .t1, li.played .t2, li.played .end { color: var(--dim); opacity: .55; 
 .vq:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .vsel option { background: var(--panel); color: var(--text); }
 
+/* EQ button: the letters, not an icon (an icon of sliders reads as Settings) */
+.eqtxt { font-weight: 800; font-size: 17px; letter-spacing: .02em; line-height: 1; }
+#b-eq-fs.ic { width: auto; min-width: 48px; padding: 0 12px; }
+#b-eq-fs.ic .eqtxt { font-size: 19px; }
 /* Settings */
 .scard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 0 0 14px; }
 .scard h3 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
