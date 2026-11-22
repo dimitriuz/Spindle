@@ -159,6 +159,46 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.spinPlan('playing', true).target, 0, 'reduced motion: never spin');
   });
 
+  await ok('nextTrack: play-next first, then the row after the current one', () => {
+    const rows = [{ title: 'a' }, { title: 'b' }, { title: 'c' }];
+    const st = (o) => Object.assign({ track: {}, index: 1, shuffle: false, repeat: 'Off' }, o);
+    assert.equal(A.nextTrack(st(), { tracks: rows, play_next: [] }).title, 'c');
+    assert.equal(A.nextTrack(st(), { tracks: rows, play_next: [{ title: 'pn' }] }).title, 'pn', 'play-next wins');
+    assert.equal(A.nextTrack(st({ index: undefined }), { tracks: rows, play_next: [] }).title, 'b', 'absent index means 0');
+    assert.equal(A.nextTrack(st({ index: 2 }), { tracks: rows, play_next: [] }), null, 'end of queue');
+    assert.equal(A.nextTrack(st({ index: 2, repeat: 'All' }), { tracks: rows, play_next: [] }).title, 'a', 'repeat all wraps');
+    assert.equal(A.nextTrack(st({ shuffle: true }), { tracks: rows, play_next: [] }), null, 'shuffle hides it');
+    assert.equal(A.nextTrack(st({ shuffle: true }), { tracks: rows, play_next: [{ title: 'pn' }] }).title, 'pn', 'play-next is certain even when shuffled');
+    assert.equal(A.nextTrack(st({ repeat: 'One' }), { tracks: rows, play_next: [] }), null, 'repeat one');
+    assert.equal(A.nextTrack(st(), { tracks: [], play_next: [] }), null);
+    assert.equal(A.nextTrack(st({ track: undefined }), { tracks: rows, play_next: [] }), null, 'nothing playing');
+    assert.equal(A.nextTrack(null, null), null);
+    assert.equal(A.nextTrack(st(), { tracks: rows }).title, 'c', 'play_next may be absent');
+  });
+
+  await ok('techLine formats what is known and nothing else', () => {
+    assert.equal(A.techLine({ format: 'FLAC', bitrate_kbps: 1161, bit_depth: 24, sample_rate: 44100, channels: 2 }), 'FLAC • 1161 kbps • 24 bit • 44.1 kHz');
+    assert.equal(A.techLine({ format: 'FLAC', sample_rate: 96000, bit_depth: 24 }), 'FLAC • 24 bit • 96 kHz');
+    assert.equal(A.techLine({ sample_rate: 88200 }), '88.2 kHz');
+    assert.equal(A.techLine({ sample_rate: 48000 }), '48 kHz');
+    assert.equal(A.techLine({ format: 'MP3', bitrate_kbps: 320 }), 'MP3 • 320 kbps');
+    assert.equal(A.techLine({ format: 'FLAC', channels: 1 }), 'FLAC • mono');
+    assert.equal(A.techLine({ format: 'FLAC', channels: 6 }), 'FLAC • 6 ch');
+    assert.equal(A.techLine({}), '');
+    assert.equal(A.techLine(null), '');
+    assert.ok(!/undefined|null|NaN/.test(A.techLine({ format: 'X', bitrate_kbps: undefined })));
+  });
+
+  await ok('fsLayout: both only when wide and landscape', () => {
+    assert.equal(A.fsLayout(1280, 720), 'both');
+    assert.equal(A.fsLayout(390, 844), 'single');
+    assert.equal(A.fsLayout(800, 900), 'single');
+    assert.equal(A.fsLayout(700, 500), 'both');
+    assert.equal(A.fsLayout(699, 400), 'single');
+    assert.equal(A.fsLayout(1000, 800), 'both', '1.25 exactly counts');
+    assert.equal(A.fsLayout(0, 0), 'single');
+  });
+
   await ok('moveTarget stops at the ends', () => {
     assert.deepEqual(A.moveTarget(0, 3, -1), null);
     assert.deepEqual(A.moveTarget(1, 3, 1), { from: 1, to: 2 });

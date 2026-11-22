@@ -63,6 +63,33 @@ function spinPlan(state, reduced) {
   return { target: 0, k: 2.2 };
 }
 
+// ---- fullscreen ----
+// nextTrack is the row that will play after the current one, or null when it
+// is not knowable: shuffle hides the real order from us, repeat-one replays
+// the same song. Play-next entries always go first.
+function nextTrack(st, q) {
+  if (!st || !q) return null;
+  const pn = q.play_next || [];
+  if (pn.length) return pn[0];
+  if (!st.track || st.shuffle || String(st.repeat || 'Off') === 'One') return null;
+  const rows = q.tracks || [], i = curIndex(st);
+  if (i < 0 || !rows.length) return null;
+  if (i + 1 < rows.length) return rows[i + 1];
+  return String(st.repeat) === 'All' ? rows[0] : null;
+}
+
+// techLine is 'FLAC • 1161 kbps • 24 bit • 44.1 kHz', leaving out what is unknown.
+function techLine(info) {
+  if (!info) return '';
+  const kHz = (hz) => (hz / 1000).toFixed(1).replace(/\.0$/, '') + ' kHz';
+  const ch = info.channels === 1 ? 'mono' : info.channels > 2 ? info.channels + ' ch' : '';
+  return [info.format, info.bitrate_kbps && info.bitrate_kbps + ' kbps', info.bit_depth && info.bit_depth + ' bit',
+    info.sample_rate && kHz(info.sample_rate), ch].filter(Boolean).join(' • ');
+}
+
+// fsLayout: with room for two squares side by side show both art faces.
+function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
+
 // position is the song position in seconds at time now, moved on from the
 // last snapshot while playing. cliamp counts and seeks in seconds.
 function position(s, now) {
@@ -155,7 +182,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
