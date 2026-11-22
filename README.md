@@ -80,6 +80,24 @@ Pictures are fetched once and cached under `<data-dir>/art/` (200 MB cap, least
 recently used removed first). The bridge only ever contacts the Navidrome host
 named in the track's own stream URL; nothing goes to outside services.
 
+## Favorites
+
+A heart on anything: tracks, albums, artists, playlists and radio stations, on
+list rows, on the album and artist pages, and on Now Playing. The Favorites tab
+lists them all with a chip per kind.
+
+- **Tracks and stations are cliamp's own favorites.** Hearting a track puts it in
+  cliamp's Favorites playlist (and cliamp stars it on Navidrome); hearting a
+  station adds it to cliamp's favorite stations. The bridge keeps no second copy,
+  so the two never disagree; changes made in the cliamp TUI show up on the next
+  refresh (opening the tab, any change, or every 60 s).
+- **Albums, artists and playlists** have no favorites in cliamp, so the bridge
+  keeps them in `<data-dir>/favorites.json` (title and ids only).
+- A radio station can be favorited only from the radio catalog (a cliamp limit);
+  it can be removed from anywhere, including Now Playing.
+- Existing stars on your Navidrome server are not imported, and albums, artists
+  and playlists are not starred there.
+
 ## Fullscreen
 
 The fullscreen button on Now Playing opens a full-window player: blurred cover

@@ -93,6 +93,26 @@ function techLine(info) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// ---- favorites ----
+const favKey = (kind, provider, id) => kind + ':' + provider + ':' + id;
+// A track is identified by its provider's id, else (a local file) by its path.
+function trackFavKey(t) {
+  if (!t) return '';
+  const meta = t.provider_meta || {};
+  for (const k of Object.keys(meta)) if (k.endsWith('.id') && meta[k]) return favKey('track', k.slice(0, -3), meta[k]);
+  return t.path ? favKey('track', 'local', t.path) : '';
+}
+const favKeys = (items) => new Set((items || []).map((it) => favKey(it.kind, it.provider, it.id)));
+const favFilter = (items, kind) => (items || []).filter((it) => kind === 'all' || it.kind === kind);
+function favCounts(items) {
+  const c = { all: 0, track: 0, album: 0, artist: 0, playlist: 0, radio: 0 };
+  for (const it of items || []) { c.all++; if (it.kind in c) c[it.kind]++; }
+  return c;
+}
+// the playing station is a favorite when a radio favorite's id is 'f:' + its stream URL
+const isPlayingFavStation = (items, track) =>
+  !!(track && track.path && (items || []).some((it) => it.kind === 'radio' && it.id === 'f:' + track.path));
+
 // ---- skipping ----
 // albumKey identifies the disc a track belongs to: same key, same disc.
 const albumKey = (song) => (song && song.album ? song.album + '|' + (song.year || '') : '');
@@ -140,7 +160,7 @@ function splitPath(rest) {
   try { return rest.split('/').map(decodeURIComponent); } catch (e) { return null; }
 }
 
-const TABS = ['now', 'queue', 'browse', 'search'];
+const TABS = ['now', 'queue', 'favorites', 'browse', 'search'];
 // parseHash maps '#', '#queue' or '#browse/prov/kind/id' to a route.
 function parseHash(h) {
   const rest = String(h || '').replace(/^#/, '');
@@ -196,11 +216,12 @@ function makeApi(fetchFn) {
   return {
     get: (path) => call(path),
     post: (path, body) => call(path, { method: 'POST', body: JSON.stringify(body) }),
+    put: (path, body) => call(path, { method: 'PUT', body: JSON.stringify(body) }),
   };
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -223,6 +244,8 @@ if (typeof document !== 'undefined') (function () {
     search: 'M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
     expand: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
     collapse: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
+    heart: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
+    heartfill: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
     back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
   };
   function svg(name) {
@@ -321,7 +344,8 @@ if (typeof document !== 'undefined') (function () {
     mine.addEventListener('state', (e) => { up(); dispatch({ type: 'state', data: JSON.parse(e.data), now: now() }); });
     mine.addEventListener('playback', (e) => { up(); dispatch({ type: 'tick', data: JSON.parse(e.data), now: now() }); });
     mine.addEventListener('playlist', () => { up(); loadQueue(); });
-    mine.addEventListener('resync', () => { up(); dispatch({ type: 'reset' }); loadState(); loadQueue(); });
+    mine.addEventListener('resync', () => { up(); dispatch({ type: 'reset' }); loadState(); loadQueue(); loadFavs(); });
+    mine.addEventListener('favorites', () => { up(); loadFavs(); });
     mine.addEventListener('player', (e) => {
       up();
       const d = JSON.parse(e.data);
@@ -590,6 +614,7 @@ if (typeof document !== 'undefined') (function () {
     }
     if (!song) updateArt(null);
     renderNext();
+    renderNowHeart();
     setSpin(st.state);
     setIcon($('b-toggle'), st.state === 'playing' ? 'pause' : 'play');
     $('b-shuffle').classList.toggle('on', !!st.shuffle);
@@ -732,11 +757,15 @@ if (typeof document !== 'undefined') (function () {
       : h('div', { class: 'row', role: 'button', tabindex: 0, onclick: o.onTap || toggle,
         onkeydown: (e) => { if (e.key === 'Enter') (o.onTap || toggle)(); } }, inner);
     const top = h('div', { class: 'toprow' }, row);
+    if (o.heart) top.append(o.heart);
     if (o.menu) {
       top.append(iconBtn('more', 'More', toggle));
       li.append(top, h('div', { class: 'menu' }, o.menu.map((m) =>
         h('button', { class: 'btn' + (m.danger ? ' danger' : ''), onclick: () => { li.classList.remove('open'); m.fn(); } }, m.label))));
-    } else li.append(top);
+    } else {
+      if (o.heart) top.append(h('span', { class: 'ic-spacer' })); // keep hearts in one column on rows without a menu
+      li.append(top);
+    }
     return li;
   }
   const head = (title, back, extra) => h('div', { class: 'head' },
@@ -759,6 +788,106 @@ if (typeof document !== 'undefined') (function () {
       rev();
     },
   }];
+
+  // ---- Favorites ----
+  // Tracks and stations live in cliamp, albums/artists/playlists in the bridge;
+  // the page only holds the merged listing and a set of keys for the hearts.
+  let favItems = [], favOn = new Set(), favPartial = false, favKind = 'all';
+  const paintHearts = () => document.querySelectorAll('.heart').forEach((b) => b.paint && b.paint());
+  async function loadFavs() {
+    let r;
+    try { r = await api.get('/api/favorites'); } catch (e) { return; } // quiet: hearts keep their last state
+    favItems = r.items || [];
+    favPartial = !!r.partial;
+    favOn = favKeys(favItems);
+    paintHearts();
+    renderNowHeart();
+    if (document.body.dataset.tab === 'favorites') renderFavorites();
+  }
+  // toggleFav flips optimistically, asks the server, trusts its answer and
+  // rolls back with a toast when it refuses.
+  async function toggleFav(wasOn, req, setOn) {
+    const want = !wasOn;
+    setOn(want);
+    try {
+      const r = await api.put('/api/favorites', Object.assign({ favorite: want }, req));
+      setOn(r.favorite);
+    } catch (e) { setOn(wasOn); toast(e.message || 'could not update the favorite', true); return; }
+    loadFavs();
+  }
+  // heartBtn: state in favOn under o.key, or (a radio catalog row, whose c:N id
+  // is not in the listing) local to the button, seeded with o.on.
+  function heartBtn(o) {
+    const b = h('button', { class: 'ic heart', 'aria-label': 'Favorite' });
+    let local = !!o.on;
+    const isOn = () => (o.key ? favOn.has(o.key) : local);
+    const setOn = (v) => { if (o.key) { if (v) favOn.add(o.key); else favOn.delete(o.key); paintHearts(); } else { local = v; b.paint(); } };
+    b.paint = () => { const on = isOn(); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); setIcon(b, on ? 'heartfill' : 'heart'); };
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); toggleFav(isOn(), o.req, setOn); };
+    b.paint();
+    return b;
+  }
+  const trackHeart = (t) => {
+    const key = trackFavKey(t);
+    return key ? heartBtn({ key, req: { kind: 'track', track: trackArg(t), title: t.title || '', subtitle: t.artist || '' } }) : null;
+  };
+  // the heart on Now Playing and fullscreen: the playing track, or a station
+  // that is already a favorite (adding a station is done from the catalog)
+  const nowFav = { key: '', req: null };
+  function renderNowHeart() {
+    const st = S.state, song = st && (st.track || st.logical_track);
+    nowFav.key = ''; nowFav.req = null;
+    if (song) {
+      const key = trackFavKey(song);
+      if (key) { nowFav.key = key; nowFav.req = { kind: 'track', track: trackArg(song), title: song.title || '', subtitle: song.artist || '' }; }
+      else if (isPlayingFavStation(favItems, song)) {
+        nowFav.key = favKey('radio', 'radio', 'f:' + song.path);
+        nowFav.req = { kind: 'radio', provider: 'radio', id: 'f:' + song.path };
+      }
+    }
+    const b = $('b-heart');
+    b.hidden = !nowFav.req;
+    b.paint();
+  }
+  function wireHeart() {
+    const b = $('b-heart');
+    b.paint = () => { const on = !!nowFav.key && favOn.has(nowFav.key); b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); setIcon(b, on ? 'heartfill' : 'heart'); };
+    b.onclick = () => {
+      const { key, req } = nowFav;
+      if (!req) return;
+      toggleFav(favOn.has(key), req, (v) => { if (v) favOn.add(key); else favOn.delete(key); paintHearts(); });
+    };
+  }
+
+  const FAV_KINDS = [['all', 'All'], ['track', 'Tracks'], ['album', 'Albums'], ['artist', 'Artists'], ['playlist', 'Playlists'], ['radio', 'Radio']];
+  function favRow(it) {
+    const prov = it.provider, k = it.kind, title = it.title || '', sub = it.subtitle || '';
+    const heart = (req) => heartBtn({ key: favKey(k, prov, it.id), req });
+    if (k === 'track') {
+      const t = it.track || {};
+      return item({ title, sub, onTap: () => playTrack(t), menu: trackMenu(t), heart: heart({ kind: 'track', track: trackArg(t), title, subtitle: sub }) });
+    }
+    if (k === 'radio') {
+      return item({ title, sub: 'radio', heart: heart({ kind: 'radio', provider: 'radio', id: it.id }), onTap: () => {
+        if (!window.confirm('play station "' + title + '"? this replaces the queue')) return;
+        cmd('provider.load', { provider: 'radio', playlist: it.id }, true); rev();
+      } });
+    }
+    const dir = k === 'album' ? 'albums' : k === 'artist' ? 'artists' : 'playlists';
+    return item({ title, sub, href: '#browse/' + enc(prov) + '/' + dir + '/' + k + '/' + enc(it.id),
+      menu: k === 'artist' ? null : replaceMenu(k, prov, it.id, title),
+      heart: heart({ kind: k, provider: prov, id: it.id, title, subtitle: sub }) });
+  }
+  function renderFavorites() {
+    const counts = favCounts(favItems);
+    if (favKind !== 'all' && !counts[favKind]) favKind = 'all';
+    const chips = h('div', { class: 'seg' }, FAV_KINDS.filter(([k]) => k === 'all' || counts[k]).map(([k, label]) =>
+      h('button', { class: k === favKind ? 'on' : null, onclick: () => { favKind = k; renderFavorites(); } }, label + (counts[k] ? ' ' + counts[k] : ''))));
+    const rows = favFilter(favItems, favKind).map(favRow);
+    $('favorites').replaceChildren(...[head('Favorites'), chips,
+      favPartial && msg('empty', 'The player is offline: tracks and stations are not shown'),
+      rows.length ? h('ul', { class: 'list' }, rows) : msg('empty', 'Nothing here yet. Tap the heart on anything to keep it.')].filter(Boolean));
+  }
 
   // ---- Queue ----
   let confirming = false;
@@ -881,21 +1010,24 @@ if (typeof document !== 'undefined') (function () {
     const drillBase = '#browse/' + enc(prov) + '/' + kind + '/';
     if (kind === 'playlists') {
       return item({ title: name, sub: row.artist || '', end: row.track_count != null ? plural(row.track_count, 'track') : '',
-        href: drillBase + 'playlist/' + enc(row.id || ''), menu: replaceMenu('playlist', prov, row.id, name) });
+        href: drillBase + 'playlist/' + enc(row.id || ''), menu: replaceMenu('playlist', prov, row.id, name),
+        heart: heartBtn({ key: favKey('playlist', prov, row.id), req: { kind: 'playlist', provider: prov, id: row.id, title: name, subtitle: row.artist || '' } }) });
     }
     if (kind === 'albums') {
       return item({ title: name, sub: [row.artist, row.year].filter(Boolean).join(' · '),
-        href: drillBase + 'album/' + enc(row.id || ''), menu: replaceMenu('album', prov, row.id, name) });
+        href: drillBase + 'album/' + enc(row.id || ''), menu: replaceMenu('album', prov, row.id, name),
+        heart: heartBtn({ key: favKey('album', prov, row.id), req: { kind: 'album', provider: prov, id: row.id, title: name, subtitle: row.artist || '' } }) });
     }
     if (kind === 'artists') {
       return item({ title: name, sub: row.album_count != null ? plural(row.album_count, 'album') : row.artist || '',
-        href: drillBase + 'artist/' + enc(row.id || '') });
+        href: drillBase + 'artist/' + enc(row.id || ''),
+        heart: heartBtn({ key: favKey('artist', prov, row.id), req: { kind: 'artist', provider: prov, id: row.id, title: name, subtitle: '' } }) });
     }
     // radio catalog: stations have no path; tap plays via provider.load
     return item({ title: name, sub: row.genre || '', onTap: () => {
       if (!window.confirm('play station "' + name + '"? this replaces the queue')) return;
       cmd('provider.load', { provider: prov, playlist: row.id }, true); rev();
-    } });
+    }, heart: row.favoritable ? heartBtn({ on: !!row.favorite || /^★ /.test(row.name || ''), req: { kind: 'radio', provider: prov, id: row.id } }) : null });
   }
   async function renderDrill(my, show, hdr, prov, what, id, backKind) {
     // an artist drills into its albums (each opens the album page); album and
@@ -905,17 +1037,25 @@ if (typeof document !== 'undefined') (function () {
     let off = 0, shown = 0, title = what === 'album' ? 'Album' : what === 'artist' ? 'Artist' : 'Playlist';
     const ul = h('ul', { class: 'list' }), more = h('button', { class: 'btn', hidden: true }, 'More');
     const back = '#browse/' + enc(prov) + '/' + (backKind || 'playlists');
+    // the page header's name is generic, so the heart learns the album/artist
+    // name from the first rows; playlists are hearted from their list row
+    const hreq = { kind: what, provider: prov, id, title: '', subtitle: '' };
+    const hheart = what === 'playlist' ? null : heartBtn({ key: favKey(what, prov, id), req: hreq });
     const load = async () => {
       more.disabled = true;
       let r;
       try { r = await api.get(url(off)); } catch (e) { show(head(title, back)); ul.append(msg('error', e.message)); return; }
       if (my !== nav) return;
       const rows = (isArtist ? r.albums : r.tracks) || [];
+      if (!shown && rows[0]) {
+        if (what === 'album') { hreq.title = rows[0].album || ''; hreq.subtitle = rows[0].artist || ''; }
+        if (isArtist) hreq.title = rows[0].artist || '';
+      }
       shown += rows.length; off += rows.length;
       ul.append(...rows.map(isArtist
         ? (a) => browseRow(prov, 'albums', a)
         : (t) => item({ title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
-          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t) })));
+          end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t), heart: trackHeart(t) })));
       more.hidden = !(r.total != null && shown < r.total);
       more.disabled = false;
       if (!shown) ul.append(msg('empty', isArtist ? 'No albums' : 'No tracks'));
@@ -927,7 +1067,7 @@ if (typeof document !== 'undefined') (function () {
         what === 'album' ? { provider: prov, album: id } : { provider: prov, playlist: id }, true);
       rev();
     } }, '▶ play ' + what);
-    show(head(title, back, extra), ul, h('div', { class: 'bar' }, more));
+    show(head(title, back, h('div', { class: 'hdr-actions' }, hheart, extra)), ul, h('div', { class: 'bar' }, more));
     await load();
   }
 
@@ -963,7 +1103,7 @@ if (typeof document !== 'undefined') (function () {
       const rows = r.tracks || [];
       out.replaceChildren(rows.length ? h('ul', { class: 'list' }, rows.map((t) => item({
         title: t.title || rowTitle(t), sub: [t.artist, t.album].filter(Boolean).join(' · '),
-        end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t) }))) : msg('empty', 'Nothing found'));
+        end: fmtTime(t.duration_secs), onTap: () => playTrack(t), menu: trackMenu(t), heart: trackHeart(t) }))) : msg('empty', 'Nothing found'));
     } catch (e) {
       if (my === searchSeq) out.replaceChildren(msg('error', e.message));
     }
@@ -975,6 +1115,7 @@ if (typeof document !== 'undefined') (function () {
     document.body.dataset.tab = r.tab;
     closeMenus();
     if (r.tab === 'browse') renderBrowse(r.rest);
+    if (r.tab === 'favorites') { renderFavorites(); loadFavs(); }
     if (r.tab === 'search') renderProviderChips();
     if (r.tab === 'queue' || (r.tab === 'now' && matchMedia('(min-width: 900px)').matches)) {
       const cur = document.querySelector('#queue li.cur');
@@ -987,6 +1128,9 @@ if (typeof document !== 'undefined') (function () {
   window.addEventListener('hashchange', route);
   wireNow();
   wireFs();
+  wireHeart();
+  setInterval(() => { if (!document.hidden) loadFavs(); }, 60000); // changes made in cliamp itself send no event
+  loadFavs();
   wireSearch();
   renderQueue();
   route();

@@ -217,6 +217,45 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.albumKey(null), '');
   });
 
+  await ok('favorite keys cover all five kinds', () => {
+    assert.equal(A.favKey('album', 'navidrome', 'al1'), 'album:navidrome:al1');
+    assert.equal(A.favKey('artist', 'navidrome', 'ar1'), 'artist:navidrome:ar1');
+    assert.equal(A.favKey('playlist', 'navidrome', 'p1'), 'playlist:navidrome:p1');
+    assert.equal(A.favKey('radio', 'radio', 'f:http://x/y'), 'radio:radio:f:http://x/y');
+    assert.equal(A.trackFavKey({ path: 'https://h/rest/stream?id=s1', provider_meta: { 'navidrome.id': 's1' } }), 'track:navidrome:s1');
+    assert.equal(A.trackFavKey({ path: '/music/a.flac' }), 'track:local:/music/a.flac');
+    assert.equal(A.trackFavKey({ title: 'no identity' }), '');
+    assert.equal(A.trackFavKey(null), '');
+  });
+
+  await ok('favKeys, favFilter, favCounts over a listing', () => {
+    const items = [
+      { kind: 'album', provider: 'navidrome', id: 'al1', title: 'A' },
+      { kind: 'track', provider: 'navidrome', id: 's1', title: 'T', track: { path: 'p' } },
+      { kind: 'radio', provider: 'radio', id: 'f:http://x/y', title: 'R' },
+      { kind: 'track', provider: 'local', id: '/m/a.flac', title: 'L' },
+    ];
+    const keys = A.favKeys(items);
+    assert.ok(keys.has('album:navidrome:al1') && keys.has('track:navidrome:s1') && keys.has('track:local:/m/a.flac') && keys.has('radio:radio:f:http://x/y'));
+    assert.equal(keys.size, 4);
+    assert.equal(A.favFilter(items, 'all').length, 4);
+    assert.deepEqual(A.favFilter(items, 'track').map((i) => i.id), ['s1', '/m/a.flac']);
+    assert.deepEqual(A.favFilter(items, 'artist'), []);
+    assert.deepEqual(A.favCounts(items), { all: 4, track: 2, album: 1, artist: 0, playlist: 0, radio: 1 });
+    assert.deepEqual(A.favCounts(null), { all: 0, track: 0, album: 0, artist: 0, playlist: 0, radio: 0 });
+    assert.equal(A.favKeys(null).size, 0);
+    assert.deepEqual(A.favFilter(null, 'all'), []);
+  });
+
+  await ok('isPlayingFavStation matches a favorited station by its stream URL', () => {
+    const items = [{ kind: 'radio', provider: 'radio', id: 'f:http://stream.example/aac', title: 'R' }];
+    assert.equal(A.isPlayingFavStation(items, { path: 'http://stream.example/aac' }), true);
+    assert.equal(A.isPlayingFavStation(items, { path: 'http://other/aac' }), false);
+    assert.equal(A.isPlayingFavStation(items, null), false);
+    assert.equal(A.isPlayingFavStation(null, { path: 'x' }), false);
+    assert.equal(A.isPlayingFavStation([{ kind: 'album', id: 'f:x' }], { path: 'x' }), false, 'only radio items count');
+  });
+
   await ok('artPlan: what has to be loaded and animated on a track change', () => {
     const k = 'A|2011';
     assert.deepEqual(A.artPlan('', k, false, false), { needCover: true, needDisc: true }, 'first track');
@@ -271,6 +310,10 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(e500.message, 'http 500');
     await api.post('/api/command', { op: 'toggle' });
     assert.equal(JSON.parse(calls.at(-1)[1].body).op, 'toggle');
+    await api.put('/api/favorites', { kind: 'album', favorite: true });
+    assert.equal(calls.at(-1)[1].method, 'PUT', 'put sends PUT');
+    assert.equal(calls.at(-1)[1].headers['Content-Type'], 'application/json', 'with the JSON header the bridge insists on');
+    assert.equal(JSON.parse(calls.at(-1)[1].body).favorite, true);
   });
 
   console.log('all ' + pass + ' groups passed');
