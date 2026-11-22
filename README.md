@@ -93,7 +93,10 @@ button; arrows, Home/End, Enter and Escape work, and Escape returns the focus.
   `queue {path}`, adds a bare URL with no metadata, so it is not used.) Adding
   an album, playlist or artist runs in the background with a progress toast and
   a Stop button; there is no size limit, 12,000 tracks take a few minutes.
-- Queue and up-next rows have Play from here, Play next, Move up/down and Remove.
+- The **Queue tab is one list in play order**: tracks that already played are greyed
+  at the top, then the current one, then what plays next (cliamp's up-next entries
+  come first), then the rest. Rows have Play from here, Play next, Move up/down
+  (inside their group) and Remove.
 - Favorite is in every menu next to the heart.
 
 ## Favorites

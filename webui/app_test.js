@@ -217,6 +217,29 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(A.albumKey(null), '');
   });
 
+  await ok('queueView: one list in play order, played items first', () => {
+    const rows = ['a', 'b', 'c', 'd', 'e'].map((title) => ({ title }));
+    const view = (st, q) => A.queueView(st, q).map((r) => r.title + ':' + r.status);
+    // nothing queued next: plain list order, everything before the current track is played
+    assert.deepEqual(view({ track: {}, index: 2 }, { tracks: rows, play_next: [] }), ['a:played', 'b:played', 'c:current', 'd:later', 'e:later']);
+    assert.deepEqual(view({ track: {} }, { tracks: rows, play_next: null }), ['a:current', 'b:later', 'c:later', 'd:later', 'e:later'], 'absent index is the first row');
+    // d and e are queued next, in the order e, d: they play before the rest, so they are listed right after the current track
+    assert.deepEqual(view({ track: {}, index: 0 }, { tracks: rows, play_next: [{ index: 4 }, { index: 3 }] }), ['a:current', 'e:next', 'd:next', 'b:later', 'c:later']);
+    // a queued row that sits before the current index has NOT been played (appended rows are played from the end)
+    assert.deepEqual(view({ track: {}, index: 4 }, { tracks: rows, play_next: [{ index: 1 }, { index: 2 }] }), ['a:played', 'd:played', 'e:current', 'b:next', 'c:next']);
+    // the current track itself may be in the up-next list: it is shown once, as current
+    assert.deepEqual(view({ track: {}, index: 1 }, { tracks: rows, play_next: [{ index: 1 }, { index: 2 }, { index: 3 }] }), ['a:played', 'b:current', 'c:next', 'd:next', 'e:later']);
+    assert.deepEqual(A.queueView({ track: {} }, { tracks: [], play_next: [] }), []);
+    assert.deepEqual(A.queueView(null, null), []);
+    assert.deepEqual(view({ track: {}, index: 0 }, { tracks: rows, play_next: [{ index: 99 }] }), ['a:current', 'b:later', 'c:later', 'd:later', 'e:later'], 'a reference past the list is ignored');
+  });
+
+  await ok('queueView: live index and position inside the up-next list are kept for the menu', () => {
+    const rows = ['a', 'b', 'c', 'd'].map((title) => ({ title }));
+    const v = A.queueView({ track: {}, index: 0 }, { tracks: rows, play_next: [{ index: 3 }, { index: 2 }] });
+    assert.deepEqual(v.map((r) => [r.title, r.index, r.pn]), [['a', 0, -1], ['d', 3, 0], ['c', 2, 1], ['b', 1, -1]]);
+  });
+
   await ok('rowActions: the menu of every kind of item', () => {
     const ids = (spec) => A.rowActions(spec).map((a) => a.id);
     assert.deepEqual(ids({ kind: 'track', fav: false }), ['play', 'add', 'fav'], 'Add to queue is cliamp up-next, so there is no separate Play next');
@@ -224,8 +247,10 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.deepEqual(ids({ kind: 'playlist', fav: true }), ['play', 'add', 'fav']);
     assert.deepEqual(ids({ kind: 'artist', fav: false }), ['play', 'add', 'fav'], 'artists have a menu too');
     assert.deepEqual(ids({ kind: 'radio', fav: false }), ['play', 'fav'], 'a station can only be played');
-    assert.deepEqual(ids({ kind: 'queue', index: 2, count: 5 }), ['playfrom', 'next', 'up', 'down', 'remove']);
-    assert.deepEqual(ids({ kind: 'playnext', index: 0, count: 2 }), ['up', 'down', 'remove']);
+    assert.deepEqual(ids({ kind: 'queue', status: 'later', canUp: true, canDown: true }), ['playfrom', 'next', 'up', 'down', 'remove']);
+    assert.deepEqual(ids({ kind: 'queue', status: 'next', canUp: true, canDown: true }), ['playfrom', 'up', 'down', 'remove'], 'already next: no Play next');
+    assert.deepEqual(ids({ kind: 'queue', status: 'played' }), ['playfrom', 'next', 'remove'], 'played rows cannot be moved');
+    assert.deepEqual(ids({ kind: 'queue', status: 'current' }), ['remove'], 'the playing row cannot be played from here or queued');
     assert.deepEqual(ids({ kind: 'track' }), ['play', 'add'], 'no favorite entry where favorites are not supported');
     assert.deepEqual(A.rowActions({ kind: 'nonsense' }), []);
     const play = A.rowActions({ kind: 'album', fav: false })[0];
@@ -236,12 +261,12 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
   await ok('rowActions: favorite label, disabled edges, danger', () => {
     assert.equal(A.rowActions({ kind: 'album', fav: false }).find((a) => a.id === 'fav').label, 'Favorite');
     assert.equal(A.rowActions({ kind: 'album', fav: true }).find((a) => a.id === 'fav').label, 'Remove from favorites');
-    const top = A.rowActions({ kind: 'queue', index: 0, count: 3 });
-    assert.equal(top.find((a) => a.id === 'up').disabled, true, 'cannot move the first row up');
+    const top = A.rowActions({ kind: 'queue', status: 'later', canUp: false, canDown: true });
+    assert.equal(top.find((a) => a.id === 'up').disabled, true, 'cannot move past the edge of its group');
     assert.ok(!top.find((a) => a.id === 'down').disabled);
-    const bottom = A.rowActions({ kind: 'queue', index: 2, count: 3 });
+    const bottom = A.rowActions({ kind: 'queue', status: 'later', canUp: true, canDown: false });
     assert.equal(bottom.find((a) => a.id === 'down').disabled, true);
-    assert.equal(A.rowActions({ kind: 'queue', index: 0, count: 1 }).filter((a) => a.disabled).length, 2, 'a single row cannot move either way');
+    assert.equal(A.rowActions({ kind: 'queue', status: 'next', canUp: false, canDown: false }).filter((a) => a.disabled).length, 2, 'a lone row cannot move either way');
     assert.equal(top.find((a) => a.id === 'remove').danger, true);
     assert.ok(!A.rowActions({ kind: 'track', fav: false }).some((a) => a.danger));
     assert.ok(A.rowActions({ kind: 'track', fav: false }).every((a) => a.icon && a.label));

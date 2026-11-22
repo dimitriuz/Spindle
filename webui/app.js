@@ -93,19 +93,50 @@ function techLine(info) {
 // fsLayout: with room for two squares side by side show both art faces.
 function fsLayout(w, h) { return w >= 700 && h > 0 && w / h >= 1.25 ? 'both' : 'single'; }
 
+// ---- queue view ----
+// queueView turns cliamp's two lists into the one the page shows, in play
+// order. The live playlist holds every track; the up-next list holds references
+// into it (by `index`) that play before the rest. So: played tracks first, the
+// current one, the up-next ones in their order, then whatever follows. A queued
+// row is NOT played just because it sits before the current index: appended
+// tracks are played from the end of the list while earlier ones still wait.
+// Entries: {t, title, index (live), status: played|current|next|later, pn (position in up-next, -1 if not)}.
+function queueView(st, q) {
+  const rows = (q && q.tracks) || [];
+  if (!rows.length) return [];
+  const cur = st && st.track ? curIndex(st) : -1;
+  const queuedAt = new Map();
+  ((q && q.play_next) || []).forEach((e, p) => {
+    const i = e.index == null ? 0 : Number(e.index);
+    if (i >= 0 && i < rows.length && i !== cur && !queuedAt.has(i)) queuedAt.set(i, p);
+  });
+  const entry = (i, status) => ({ t: rows[i], title: rows[i].title, index: i, status, pn: queuedAt.has(i) ? queuedAt.get(i) : -1 });
+  const out = [];
+  for (let i = 0; i < rows.length; i++) if (i < cur && !queuedAt.has(i)) out.push(entry(i, 'played'));
+  if (cur >= 0 && cur < rows.length) out.push(entry(cur, 'current'));
+  Array.from(queuedAt.entries()).sort((a, b) => a[1] - b[1]).forEach(([i]) => out.push(entry(i, 'next')));
+  for (let i = Math.max(cur + 1, 0); i < rows.length; i++) if (!queuedAt.has(i)) out.push(entry(i, 'later'));
+  return out;
+}
+
 // ---- item menu ----
 // rowActions is the menu of one item: Play (clear the queue, add, play) and
 // Add to queue everywhere they make sense, plus the extras of each kind.
 function rowActions(spec) {
   const A = (id, label, icon, more) => Object.assign({ id, label, icon }, more);
   const fav = spec.fav === undefined ? [] : [A('fav', spec.fav ? 'Remove from favorites' : 'Favorite', spec.fav ? 'heartfill' : 'heart')];
-  const edges = (i, n) => [A('up', 'Move up', 'up', { disabled: i <= 0 }), A('down', 'Move down', 'down', { disabled: i >= n - 1 })];
   switch (spec.kind) {
     case 'track': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add'), ...fav];
     case 'album': case 'playlist': case 'artist': return [A('play', 'Play', 'play'), A('add', 'Add to queue', 'add'), ...fav];
     case 'radio': return [A('play', 'Play', 'play'), ...fav];
-    case 'queue': return [A('playfrom', 'Play from here', 'play'), A('next', 'Play next', 'next'), ...edges(spec.index, spec.count), A('remove', 'Remove', 'trash', { danger: true })];
-    case 'playnext': return [...edges(spec.index, spec.count), A('remove', 'Remove', 'trash', { danger: true })];
+    case 'queue': {
+      const st = spec.status, acts = [];
+      if (st !== 'current') acts.push(A('playfrom', 'Play from here', 'play'));
+      if (st === 'played' || st === 'later') acts.push(A('next', 'Play next', 'next'));
+      if (st === 'next' || st === 'later') acts.push(A('up', 'Move up', 'up', { disabled: !spec.canUp }), A('down', 'Move down', 'down', { disabled: !spec.canDown }));
+      acts.push(A('remove', 'Remove', 'trash', { danger: true }));
+      return acts;
+    }
   }
   return [];
 }
@@ -272,7 +303,7 @@ function makeApi(fetchFn) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { initial, reduce, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
+  module.exports = { initial, reduce, queueView, rowActions, menuMode, menuPlacement, menuKey, progressText, favKey, trackFavKey, favKeys, favFilter, favCounts, isPlayingFavStation, artPlan, albumKey, trackDir, skipDip, nextTrack, techLine, fsLayout, artUrl, spinStep, spinPlan, curIndex, curVolume, position, backoff, WATCHDOG_MS, makeWatchdog, splitPath, TABS, parseHash, fmtTime, lyricIndex, moveTarget, plural, makeApi };
 }
 
 // ---- the page ----
@@ -354,7 +385,7 @@ if (typeof document !== 'undefined') (function () {
     S = reduce(S, ev);
     if (ev.type === 'state' || ev.type === 'tick') {
       renderNow();
-      if (curIndex(prev.state) !== curIndex(S.state)) markCurrent();
+      if (curIndex(prev.state) !== curIndex(S.state)) renderQueue();
     } else if (ev.type === 'queue') {
       renderQueue();
       renderNext();
@@ -1054,56 +1085,50 @@ if (typeof document !== 'undefined') (function () {
   // ---- Queue ----
   let confirming = false;
   function renderQueue() {
-    const q = S.queue, cur = curIndex(S.state);
-    const sections = [];
-    if (q.play_next && q.play_next.length) {
-      sections.push(h('div', { class: 'sub' }, 'Play next'), h('ul', { class: 'list' },
-        q.play_next.map((t, i) => item({
-          title: t.title || t.path, sub: t.artist || '', end: fmtTime(t.duration_secs != null ? t.duration_secs : t.duration),
-          more: () => ({ spec: { kind: 'playnext', index: i, count: q.play_next.length }, run: {
-            up: () => moveCmd('playnext.move', i, -1),
-            down: () => moveCmd('playnext.move', i, 1),
-            remove: () => { cmd('playnext.remove', { index: i }, true); rev(); },
-          } }),
-        })))
-      );
-    }
+    const q = S.queue, view = queueView(S.state, q), pn = q.play_next || [], cur = curIndex(S.state);
+    const statusAt = new Map(view.map((r) => [r.index, r.status]));
     const clear = confirming
       ? h('span', { class: 'confirm' }, 'Clear the queue?',
         h('button', { class: 'btn danger', onclick: () => { confirming = false; cmd('queue.clear', {}, true); rev(); } }, 'Clear'),
         h('button', { class: 'btn', onclick: () => { confirming = false; renderQueue(); } }, 'Cancel'))
       : null;
-    sections.push(h('div', { class: 'sub' }, 'Queue'), h('ul', { class: 'list' },
-      (q.tracks || []).map((t, i) => {
-        const li = item({
-          title: t.title || t.path, sub: t.artist || '', end: fmtTime(t.duration_secs != null ? t.duration_secs : t.duration), cur: i === cur,
-          onTap: () => { if (i !== cur) cmd('queue.play', { index: i }, true); },
-          more: () => ({ spec: { kind: 'queue', index: i, count: (q.tracks || []).length }, run: {
-            playfrom: () => cmd('queue.play', { index: i }, true),
-            next: () => { cmd('queue.enqueue', { index: i }, true); rev(); },
-            up: () => moveCmd('queue.move', i, -1),
-            down: () => moveCmd('queue.move', i, 1),
-            remove: () => { cmd('queue.remove', { index: i }, true); rev(); },
-          } }),
-        });
-        li.dataset.i = i;
-        return li;
-      })));
+    const rows = view.map((r) => {
+      const t = r.t, i = r.index;
+      // moving works inside a group: up-next entries among themselves, the rest of the list among itself
+      let canUp = false, canDown = false;
+      if (r.status === 'next') {
+        const prev = pn[r.pn - 1], next = pn[r.pn + 1];
+        canUp = !!prev && Number(prev.index || 0) !== cur;
+        canDown = !!next;
+      } else if (r.status === 'later') {
+        canUp = statusAt.get(i - 1) === 'later';
+        canDown = statusAt.get(i + 1) === 'later';
+      }
+      const mv = (dir) => (r.status === 'next' ? moveCmd('playnext.move', r.pn, dir) : moveCmd('queue.move', i, dir));
+      const li = item({
+        title: t.title || t.path, sub: t.artist || '', end: fmtTime(t.duration_secs != null ? t.duration_secs : t.duration), cur: r.status === 'current',
+        onTap: () => { if (r.status !== 'current') cmd('queue.play', { index: i }, true); },
+        more: () => ({ spec: { kind: 'queue', status: r.status, canUp, canDown }, run: {
+          playfrom: () => cmd('queue.play', { index: i }, true),
+          next: () => { cmd('queue.enqueue', { index: i }, true); rev(); },
+          up: () => mv(-1),
+          down: () => mv(1),
+          remove: () => { cmd('queue.remove', { index: i }, true); rev(); },
+        } }),
+      });
+      li.dataset.i = i;
+      if (r.status === 'played') li.classList.add('played');
+      return li;
+    });
     $('queue').replaceChildren(
       h('div', { class: 'head' }, h('h2', null, 'Queue'), clear),
-      ...(q.tracks && q.tracks.length ? sections : [msg('empty', 'The queue is empty')]));
+      ...(rows.length ? [h('ul', { class: 'list' }, rows)] : [msg('empty', 'The queue is empty')]));
   }
   function moveCmd(op, i, dir) {
     const n = op === 'queue.move' ? (S.queue.tracks || []).length : (S.queue.play_next || []).length;
     const t = moveTarget(i, n, dir);
     if (t) { cmd(op, { index: t.from, to: t.to }, true); rev(); }
   }
-  function markCurrent() {
-    document.querySelectorAll('#queue li.cur').forEach((l) => l.classList.remove('cur'));
-    const li = document.querySelector('#queue li[data-i="' + curIndex(S.state) + '"]');
-    if (li) li.classList.add('cur');
-  }
-
   // ---- Browse ----
   let nav = 0, providers = null, provSeq = 0;
   const PROVIDER_KINDS = [
