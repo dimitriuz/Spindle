@@ -312,6 +312,7 @@ make test      # go vet + go test + node webui/app_test.js
 - The pure half of the page (list sorting, menus, themes, formatting) is tested in plain Node: `node webui/app_test.js`.
 - After changing `webui/`, rebuild the binary (the files are embedded) and hard-reload the page.
 - Screenshots in this README were taken with headless Chrome against a real player.
+- Research notes: [chiptune and tracker formats with cliamp](docs/chiptune-formats.md) (what cliamp can and cannot play, and a ZXTune test).
 
 ## Credits and license
 
