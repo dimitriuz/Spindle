@@ -2,7 +2,7 @@
 local p = plugin.register({
     name        = "web",
     type        = "hook",
-    version     = "1.1.0",
+    version     = "0.1.0",
     description = "LAN web interface (spawns the cliamp-web bridge)",
     permissions = {"exec"},
 })

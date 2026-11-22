@@ -1,6 +1,6 @@
 # Maintainer: Dmitrii Leshchenko (github.com/dimitriuz)
 pkgname=cliamp-web
-pkgver=1.0.0
+pkgver=0.1.0
 pkgrel=1
 pkgdesc="Spindle: web remote and library browser for cliamp (the cliamp-web bridge)"
 arch=(x86_64 aarch64)
