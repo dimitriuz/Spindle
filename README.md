@@ -82,7 +82,7 @@ named in the track's own stream URL; nothing goes to outside services.
 
 ## Files
 
-The **Files** tile in Browse is a file browser over the music folder cliamp's own
+Under **Local** in Browse, next to Playlists, the **Files** tab is a file browser over the music folder cliamp's own
 browser starts in (`initial_directory` in cliamp's `config.toml`, else `~/Music`;
 override with `cliamp-web serve --music-dir DIR`). cliamp has no operation for
 listing folders, so the bridge, which runs on the same machine, does it.

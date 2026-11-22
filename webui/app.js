@@ -1160,15 +1160,20 @@ if (typeof document !== 'undefined') (function () {
     ['albums', 'Albums', 'albums'],
     ['artists', 'Artists', 'artists'],
     ['catalog', 'Radio', 'catalog'],
+    ['files', 'Files', 'files'], // the Local provider's folder view, when the bridge has a music folder
   ];
   const kindsOf = (p) => PROVIDER_KINDS.filter(([k]) =>
-    k === 'playlists' || (k === 'albums' && p.browse_albums) || (k === 'artists' && p.browse_artists) || (k === 'catalog' && p.catalog));
+    k === 'playlists' || (k === 'albums' && p.browse_albums) || (k === 'artists' && p.browse_artists) || (k === 'catalog' && p.catalog) || (k === 'files' && p.browse_files));
   async function loadProviders() {
     if (providers) return providers;
     const seq = ++provSeq;
     try {
       const r = await api.get('/api/library/providers');
-      if (seq === provSeq) providers = r.providers || [];
+      if (seq === provSeq) {
+        providers = r.providers || [];
+        // cliamp's file browser lives under Local, next to its playlists
+        if (await filesRoot()) providers.forEach((pr) => { if (pr.key === 'local') pr.browse_files = true; });
+      }
     } catch (e) { fail(e); return null; }
     return providers;
   }
@@ -1176,17 +1181,15 @@ if (typeof document !== 'undefined') (function () {
   async function renderBrowse(rest) {
     const my = ++nav, root = $('browse');
     const p = splitPath(rest) || [''];
-    const show = (...kids) => { if (my === nav) root.replaceChildren(...kids); };
+    const show = (...kids) => { if (my === nav) root.replaceChildren(...kids.filter(Boolean)); }; // a null child would print as "null"
     const listUrl = (prov, kind, off) => '/api/library/' + enc(prov) + '/' + kind + '?offset=' + off + '&limit=50';
 
     if (p[0] === '' || p[0] === 'home') {
       const ps = await loadProviders();
       if (!ps) { show(head('Browse'), msg('error', 'no providers')); return; }
-      const fname = await filesRoot();
-      show(head('Browse'), h('div', { class: 'tiles' },
-        ps.map((pr) => h('a', { class: 'tile', href: '#browse/' + enc(pr.key) + '/playlists' }, pr.name,
-          h('span', null, kindsOf(pr).map((k) => k[1]).join(' · ')))),
-        fname ? h('a', { class: 'tile', href: filesHash('') }, 'Files', h('span', null, fname)) : null));
+      show(head('Browse'), h('div', { class: 'tiles' }, ps.map((pr) =>
+        h('a', { class: 'tile', href: '#browse/' + enc(pr.key) + '/playlists' }, pr.name,
+          h('span', null, kindsOf(pr).map((k) => k[1]).join(' · '))))));
       return;
     }
     if (p[0] === 'files') { await renderFiles(my, show, p[1] || ''); return; }
@@ -1196,7 +1199,7 @@ if (typeof document !== 'undefined') (function () {
     if (!info) { show(head('Browse', '#browse'), msg('error', 'unknown provider: ' + prov)); return; }
     const kind = p[1] || 'playlists';
     const seg = h('div', { class: 'seg' }, kindsOf(info).map(([k, label]) =>
-      h('a', { href: '#browse/' + enc(prov) + '/' + k, class: k === kind ? 'on' : null }, label)));
+      h('a', { href: k === 'files' ? filesHash('') : '#browse/' + enc(prov) + '/' + k, class: k === kind ? 'on' : null }, label)));
     const hdr = head(info.name, '#browse', seg);
 
     if (p.length >= 4 && (p[2] === 'album' || p[2] === 'artist' || p[2] === 'playlist')) {
@@ -1282,7 +1285,9 @@ if (typeof document !== 'undefined') (function () {
       h('button', { class: 'btn primary', onclick: () => go('folder', l.path, 'play') }, '▶ Play'),
       h('button', { class: 'btn', onclick: () => go('folder', l.path, 'append') }, '+ Add')) : null;
     draw();
-    show(head(l.name || 'Files', parent === null ? '#browse' : filesHash(parent), actions),
+    const seg = h('div', { class: 'seg' },
+      h('a', { href: '#browse/local/playlists' }, 'Playlists'), h('a', { href: filesHash(''), class: 'on' }, 'Files'));
+    show(head(l.path ? l.name : 'Local', parent === null ? '#browse' : filesHash(parent), actions), seg,
       l.path ? h('div', { class: 'crumb dim' }, l.path.split('/').join(' › ')) : null,
       l.entries.length > 8 ? filter : null, ul);
   }
