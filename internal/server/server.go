@@ -49,6 +49,10 @@ type Config struct {
 	// HeartbeatInterval is the SSE keepalive cadence (0 ⇒ 15 s).
 	HeartbeatInterval time.Duration
 
+	// StatusMinGap is the shortest time between two position-only status
+	// frames on /api/ws (0 ⇒ 1 s).
+	StatusMinGap time.Duration
+
 	listCache      *ttlcache
 	providersCache *ttlcache
 	noCache        *ttlcache
@@ -68,9 +72,17 @@ func (c *Config) heartbeat() time.Duration {
 	return c.HeartbeatInterval
 }
 
+func (c *Config) statusGap() time.Duration {
+	if c.StatusMinGap == 0 {
+		return time.Second
+	}
+	return c.StatusMinGap
+}
+
 type serverState struct {
 	cfg     Config
 	started time.Time
+	sizes   sizedCache
 }
 
 // New assembles the HTTP handler. The request guard (protect) wraps every
@@ -89,6 +101,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/queue", s.protect(http.HandlerFunc(s.queue)))
 	mux.Handle("GET /api/about", s.protect(http.HandlerFunc(s.about)))
 	mux.Handle("GET /api/capabilities", s.protect(http.HandlerFunc(s.capabilities)))
+	mux.Handle("GET /api/ws", s.protect(http.HandlerFunc(s.ws)))
 	mux.Handle("GET /api/events", s.protect(http.HandlerFunc(s.events)))
 	mux.Handle("POST /api/command", s.protect(http.HandlerFunc(s.command)))
 	mux.Handle("GET /api/library/providers", s.protect(http.HandlerFunc(s.libraryProviders)))
@@ -99,9 +112,9 @@ func New(cfg Config) http.Handler {
 	mux.Handle("GET /api/library/{provider}/playlist/{id}/tracks", s.protect(http.HandlerFunc(s.libraryPlaylistTracks)))
 	mux.Handle("GET /api/radio/search", s.protect(http.HandlerFunc(s.radioSearch)))
 	mux.Handle("POST /api/radio/meta", s.protect(http.HandlerFunc(s.radioMeta)))
-	mux.Handle("GET /api/art/station", s.protect(http.HandlerFunc(s.stationArt)))
-	mux.Handle("GET /api/art/item", s.protect(http.HandlerFunc(s.itemArt)))
-	mux.Handle("GET /api/art/{kind}", s.protect(http.HandlerFunc(s.art)))
+	mux.Handle("GET /api/art/station", s.protect(checkSize(http.HandlerFunc(s.stationArt))))
+	mux.Handle("GET /api/art/item", s.protect(checkSize(http.HandlerFunc(s.itemArt))))
+	mux.Handle("GET /api/art/{kind}", s.protect(checkSize(http.HandlerFunc(s.art))))
 	mux.Handle("GET /api/trackinfo", s.protect(http.HandlerFunc(s.trackInfo)))
 	mux.Handle("GET /api/favorites", s.protect(http.HandlerFunc(s.favoritesList)))
 	mux.Handle("PUT /api/favorites", s.protect(http.HandlerFunc(s.favoritesSet)))
@@ -109,7 +122,7 @@ func New(cfg Config) http.Handler {
 	mux.Handle("POST /api/enqueue/cancel", s.protect(http.HandlerFunc(s.enqueueCancel)))
 	mux.Handle("GET /api/files/groups", s.protect(http.HandlerFunc(s.filesGroups)))
 	mux.Handle("GET /api/files/root", s.protect(http.HandlerFunc(s.filesRoot)))
-	mux.Handle("GET /api/files/art", s.protect(http.HandlerFunc(s.folderArt)))
+	mux.Handle("GET /api/files/art", s.protect(checkSize(http.HandlerFunc(s.folderArt))))
 	mux.Handle("GET /api/files", s.protect(http.HandlerFunc(s.filesList)))
 	mux.Handle("GET /api/lyrics", s.protect(http.HandlerFunc(s.libraryLyrics)))
 	mux.Handle("GET /api/search/{provider}", s.protect(http.HandlerFunc(s.librarySearch)))

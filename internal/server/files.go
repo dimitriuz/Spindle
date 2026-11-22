@@ -38,6 +38,8 @@ func (s *serverState) filesList(w http.ResponseWriter, r *http.Request) {
 	}
 	l, err := s.cfg.Files.List(r.URL.Query().Get("path"))
 	switch {
+	case err == nil && wantCompact(r):
+		writeJSON(w, http.StatusOK, compactFiles(l))
 	case err == nil:
 		writeJSON(w, http.StatusOK, l)
 	case errors.Is(err, files.ErrOutside):

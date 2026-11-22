@@ -49,11 +49,28 @@ func libParams(r *http.Request) (map[string]any, bool) {
 	return map[string]any{"provider": r.PathValue("provider"), "offset": offset, "limit": limit}, true
 }
 
-// libraryGET runs one provider op for a GET, with cache + error mapping.
-func (s *serverState) libraryGET(w http.ResponseWriter, r *http.Request, cache *ttlcache, op string, params map[string]any) {
+// wantCompact reports whether the caller asked for the small list shape.
+func wantCompact(r *http.Request) bool { return r.URL.Query().Get("compact") == "1" }
+
+// libraryGET runs one provider op for a GET. hint names the kind of the rows
+// ("album", "track", ...) for ?compact=1; "" means the result is never compacted.
+func (s *serverState) libraryGET(w http.ResponseWriter, r *http.Request, cache *ttlcache, op, hint string, params map[string]any) {
 	key := r.URL.Path + "?" + r.URL.RawQuery
-	if body, ok := cache.get(key); ok {
+	respond := func(body json.RawMessage) {
+		if hint != "" && wantCompact(r) {
+			offset, _ := params["offset"].(int)
+			limit, _ := params["limit"].(int)
+			c, err := compactList(hint, body, offset, limit)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal_error", "code": "internal_error"})
+				return
+			}
+			body = c
+		}
 		writeJSON(w, http.StatusOK, body)
+	}
+	if body, ok := cache.get(key); ok {
+		respond(body)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), s.cfg.libraryTimeout())
@@ -67,7 +84,7 @@ func (s *serverState) libraryGET(w http.ResponseWriter, r *http.Request, cache *
 		job.Result = json.RawMessage(`{"ok":true}`)
 	}
 	cache.put(key, job.Result)
-	writeJSON(w, http.StatusOK, job.Result)
+	respond(job.Result)
 }
 
 // libraryError maps provider failures: upstream errors keep the player's
@@ -88,7 +105,7 @@ func (s *serverState) libraryError(w http.ResponseWriter, err error) {
 }
 
 func (s *serverState) libraryProviders(w http.ResponseWriter, r *http.Request) {
-	s.libraryGET(w, r, s.cfg.providersCache, "provider.list", map[string]any{})
+	s.libraryGET(w, r, s.cfg.providersCache, "provider.list", "", map[string]any{})
 }
 
 func (s *serverState) libraryList(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +126,8 @@ func (s *serverState) libraryList(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.PathValue("kind") {
 	case "playlists", "albums", "artists", "catalog":
-		s.libraryGET(w, r, s.cfg.listCache, "provider."+r.PathValue("kind"), params)
+		hint := map[string]string{"playlists": "playlist", "albums": "album", "artists": "artist", "catalog": "station"}[r.PathValue("kind")]
+		s.libraryGET(w, r, s.cfg.listCache, "provider."+r.PathValue("kind"), hint, params)
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
 	}
@@ -122,7 +140,7 @@ func (s *serverState) libraryAlbumTracks(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	params["album"] = r.PathValue("id")
-	s.libraryGET(w, r, s.cfg.listCache, "provider.album_tracks", params)
+	s.libraryGET(w, r, s.cfg.listCache, "provider.album_tracks", "track", params)
 }
 
 func (s *serverState) libraryArtistTracks(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +150,7 @@ func (s *serverState) libraryArtistTracks(w http.ResponseWriter, r *http.Request
 		return
 	}
 	params["id"] = r.PathValue("id")
-	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", params)
+	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", "track", params)
 }
 
 // libraryArtistAlbums lists an artist's albums. cliamp v2.4.0 takes the
@@ -144,7 +162,7 @@ func (s *serverState) libraryArtistAlbums(w http.ResponseWriter, r *http.Request
 		return
 	}
 	params["artist"] = r.PathValue("id")
-	s.libraryGET(w, r, s.cfg.listCache, "provider.artist_albums", params)
+	s.libraryGET(w, r, s.cfg.listCache, "provider.artist_albums", "album", params)
 }
 
 func (s *serverState) libraryPlaylistTracks(w http.ResponseWriter, r *http.Request) {
@@ -155,12 +173,12 @@ func (s *serverState) libraryPlaylistTracks(w http.ResponseWriter, r *http.Reque
 	}
 	// playlist-only by construction: this route cannot emit an id param.
 	params["playlist"] = r.PathValue("id")
-	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", params)
+	s.libraryGET(w, r, s.cfg.listCache, "provider.tracks", "track", params)
 }
 
 func (s *serverState) libraryLyrics(w http.ResponseWriter, r *http.Request) {
 	// never cached: lyrics follow whatever track is loaded right now
-	s.libraryGET(w, r, s.cfg.noCache, "lyrics", map[string]any{})
+	s.libraryGET(w, r, s.cfg.noCache, "lyrics", "", map[string]any{})
 }
 
 func (s *serverState) librarySearch(w http.ResponseWriter, r *http.Request) {
@@ -176,5 +194,5 @@ func (s *serverState) librarySearch(w http.ResponseWriter, r *http.Request) {
 	}
 	params["query"] = q
 	// search is never cached: the noCache instance has TTL 0 and always misses.
-	s.libraryGET(w, r, s.cfg.noCache, "provider.search", params)
+	s.libraryGET(w, r, s.cfg.noCache, "provider.search", "track", params)
 }

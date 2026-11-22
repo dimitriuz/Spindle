@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,8 +18,26 @@ import (
 const writeTimeout = 10 * time.Second
 
 // queue serves the cached live playlist.
+//
+// With ?compact=1 it serves a window of rows in the small shape instead
+// (offset 0 and limit 200 unless given; limit is clamped to 200).
 func (s *serverState) queue(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.cfg.Cache.Queue())
+	if !wantCompact(r) {
+		writeJSON(w, 200, s.cfg.Cache.Queue())
+		return
+	}
+	offset, limit := 0, queueFrameRows
+	for name, dst := range map[string]*int{"offset": &offset, "limit": &limit} {
+		if v := r.URL.Query().Get(name); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 || (name == "limit" && n < 1) {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+				return
+			}
+			*dst = n
+		}
+	}
+	writeJSON(w, 200, compactQueue(s.cfg.Cache.Queue(), offset, min(limit, queueFrameRows)))
 }
 
 // capabilities serves the cached cliamp capabilities document.
