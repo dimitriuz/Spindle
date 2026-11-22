@@ -137,3 +137,7 @@ func compactQueue(q snapshot.Queue, offset, limit int) json.RawMessage {
 	})
 	return b
 }
+
+// queueFrameRows is the most queue rows one compact response or WebSocket
+// frame carries; a client pages through the rest.
+const queueFrameRows = 200
