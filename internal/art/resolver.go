@@ -2,7 +2,10 @@ package art
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"net/url"
 	"time"
 )
 
@@ -24,6 +27,7 @@ type Resolver struct {
 	local   *Local
 	restore func(string) string
 	known   func(string) bool
+	ndCfg   *NavidromeConfig // the user's server login from cliamp's config, for covers by id
 }
 
 func NewResolver(o Options) (*Resolver, error) {
@@ -110,4 +114,28 @@ func (r *Resolver) Info(ctx context.Context, trackPath string, durationSecs floa
 		return r.nd.Info(ctx, orig)
 	}
 	return r.local.Info(trackPath, durationSecs)
+}
+
+// SetNavidrome gives the resolver the login for covers by album, artist and
+// playlist id (the track-based routes get theirs from the stream URLs).
+func (r *Resolver) SetNavidrome(c NavidromeConfig) { r.ndCfg = &c }
+
+var itemPrefix = map[string]string{"album": "al-", "artist": "ar-", "playlist": "pl-"}
+
+// ItemArt returns the 300 px cover of a Navidrome album, artist or playlist.
+// ErrNoArt when none exists, nothing is configured, or the id is not an id.
+func (r *Resolver) ItemArt(ctx context.Context, kind, id string) (*Image, error) {
+	prefix, ok := itemPrefix[kind]
+	if !ok || !ValidItemID(id) || r.ndCfg == nil {
+		return nil, ErrNoArt
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	base := r.ndCfg.URL + "/rest"
+	srv := sha256.Sum256([]byte(base))
+	key := "nd:item:" + hex.EncodeToString(srv[:4]) + ":" + kind + ":" + id
+	return r.cache.Do(key, func() ([]byte, error) {
+		target := base + "/getCoverArt?" + r.ndCfg.query(url.Values{"id": {prefix + id}, "size": {"300"}}).Encode()
+		return r.nd.download(ctx, target)
+	})
 }

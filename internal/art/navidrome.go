@@ -196,31 +196,41 @@ func (n *Navidrome) Resolve(ctx context.Context, kind Kind, streamURL string) (s
 	key := "nd:" + hex.EncodeToString(srv[:4]) + ":" + kname + ":" + id
 	target := n.endpoint(base, "getCoverArt", auth, q)
 	return key, func() ([]byte, error) {
-		resp, err := n.get(ctx, target)
+		data, err := n.download(ctx, target)
 		if err != nil {
 			return nil, err
-		}
-		defer resp.Body.Close()
-		switch {
-		case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest:
-			return nil, ErrNoArt
-		case resp.StatusCode >= 500:
-			return nil, fmt.Errorf("art: getCoverArt: http %d", resp.StatusCode)
-		case resp.StatusCode != http.StatusOK:
-			return nil, ErrNoArt
-		}
-		data, err := io.ReadAll(io.LimitReader(resp.Body, MaxImageBytes+1))
-		if err != nil {
-			return nil, err
-		}
-		if len(data) > MaxImageBytes || !strings.HasPrefix(http.DetectContentType(data), "image/") {
-			return nil, ErrNoArt // an error document or an oversize file is not art
 		}
 		if kind == Disc && !looksLikeDisc(data) {
 			return nil, ErrNoArt // Navidrome answers dc- ids with the album cover when there is no disc.png
 		}
 		return data, nil
 	}, nil
+}
+
+// download fetches one picture: ErrNoArt for "there is none" (404, an error
+// document, something too big), a plain error for "could not ask".
+func (n *Navidrome) download(ctx context.Context, target string) ([]byte, error) {
+	resp, err := n.get(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest:
+		return nil, ErrNoArt
+	case resp.StatusCode >= 500:
+		return nil, fmt.Errorf("art: getCoverArt: http %d", resp.StatusCode)
+	case resp.StatusCode != http.StatusOK:
+		return nil, ErrNoArt
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, MaxImageBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxImageBytes || !strings.HasPrefix(http.DetectContentType(data), "image/") {
+		return nil, ErrNoArt // an error document or an oversize file is not art
+	}
+	return data, nil
 }
 
 // Info returns the technical details Navidrome holds for the stream's song.

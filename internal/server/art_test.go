@@ -188,3 +188,82 @@ func TestTrackInfoBadDurationIsIgnored(t *testing.T) {
 		t.Fatalf("%d duration=%v", rec.Code, fi.duration)
 	}
 }
+
+type fakeItemArt struct {
+	img  *art.Image
+	err  error
+	kind string
+	id   string
+}
+
+func (f *fakeItemArt) ItemArt(_ context.Context, kind, id string) (*art.Image, error) {
+	f.kind, f.id = kind, id
+	return f.img, f.err
+}
+
+func itemServer(t *testing.T, fi *fakeItemArt) http.Handler {
+	cfg := guardedConfig(t)
+	cfg.ItemArt = fi
+	return New(cfg)
+}
+
+func TestItemArtRouteServesWithETag(t *testing.T) {
+	fi := &fakeItemArt{img: &art.Image{Data: pngHead, ContentType: "image/png", Key: "k1"}}
+	h := itemServer(t, fi)
+	rec := artGet(h, "/api/art/item?provider=navidrome&kind=album&id=Abc_1-2.x", nil)
+	if rec.Code != 200 || rec.Header().Get("ETag") != `"k1"` || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("%d %v", rec.Code, rec.Header())
+	}
+	if fi.kind != "album" || fi.id != "Abc_1-2.x" {
+		t.Fatalf("source got %q %q", fi.kind, fi.id)
+	}
+	if rec := artGet(h, "/api/art/item?provider=navidrome&kind=artist&id=x", map[string]string{"If-None-Match": `"k1"`}); rec.Code != 304 {
+		t.Fatalf("304: %d", rec.Code)
+	}
+}
+
+func TestItemArtRouteRefusesBadInputBeforeTheSource(t *testing.T) {
+	fi := &fakeItemArt{img: &art.Image{Data: pngHead, ContentType: "image/png", Key: "k"}}
+	h := itemServer(t, fi)
+	long := strings.Repeat("a", 81)
+	for _, q := range []string{
+		"provider=navidrome&kind=album", "provider=navidrome&kind=album&id=", "provider=spotify&kind=album&id=x", "provider=navidrome&kind=track&id=x",
+		"provider=navidrome&kind=album&id=a%2Fb", "provider=navidrome&kind=album&id=a%3Fb", "provider=navidrome&kind=album&id=..", "provider=navidrome&kind=album&id=a%26b",
+		"provider=navidrome&kind=album&id=a%0Ab", "provider=navidrome&kind=album&id=" + long, "kind=album&id=x",
+	} {
+		if rec := artGet(h, "/api/art/item?"+q, nil); rec.Code != 400 {
+			t.Fatalf("%s: want 400, got %d", q, rec.Code)
+		}
+	}
+	if fi.id != "" {
+		t.Fatalf("a refused request reached the source: %q", fi.id)
+	}
+}
+
+func TestItemArt404HasNoCredentialsAndNilSourceIs404(t *testing.T) {
+	for _, err := range []error{art.ErrNoArt, errors.New("GET https://nd/rest/getCoverArt?u=bob&t=TOKEN&s=SALT failed")} {
+		rec := artGet(itemServer(t, &fakeItemArt{err: err}), "/api/art/item?provider=navidrome&kind=album&id=x", nil)
+		if rec.Code != 404 || !strings.Contains(rec.Body.String(), `"no_art"`) {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+		for _, s := range []string{"bob", "TOKEN", "SALT", "getCoverArt"} {
+			if strings.Contains(rec.Body.String(), s) {
+				t.Fatalf("404 leaks %q", s)
+			}
+		}
+	}
+	if rec := artGet(New(guardedConfig(t)), "/api/art/item?provider=navidrome&kind=album&id=x", nil); rec.Code != 404 {
+		t.Fatalf("no source: %d", rec.Code)
+	}
+}
+
+func TestItemArtRouteIsGuarded(t *testing.T) {
+	h := itemServer(t, &fakeItemArt{})
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/art/item?provider=navidrome&kind=album&id=x", nil)
+	r.Host = "evil.example.org"
+	h.ServeHTTP(rec, r)
+	if rec.Code != 400 {
+		t.Fatalf("%d", rec.Code)
+	}
+}

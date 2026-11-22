@@ -39,18 +39,7 @@ func (s *serverState) art(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
 		return
 	}
-	etag := `"` + img.Key + `"`
-	h := w.Header()
-	h.Set("ETag", etag)
-	h.Set("Cache-Control", "public, max-age=86400")
-	h.Set("X-Content-Type-Options", "nosniff")
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	h.Set("Content-Type", img.ContentType)
-	h.Set("Content-Length", strconv.Itoa(len(img.Data)))
-	_, _ = w.Write(img.Data)
+	writeImage(w, r, img)
 }
 
 // trackInfo serves GET /api/trackinfo?path=&duration=: codec, bitrate and so
@@ -76,4 +65,47 @@ func (s *serverState) trackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	writeJSON(w, http.StatusOK, info)
+}
+
+// writeImage sends a picture with the caching headers every art route shares.
+func writeImage(w http.ResponseWriter, r *http.Request, img *art.Image) {
+	etag := `"` + img.Key + `"`
+	h := w.Header()
+	h.Set("ETag", etag)
+	h.Set("Cache-Control", "public, max-age=86400")
+	h.Set("X-Content-Type-Options", "nosniff")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	h.Set("Content-Type", img.ContentType)
+	h.Set("Content-Length", strconv.Itoa(len(img.Data)))
+	_, _ = w.Write(img.Data)
+}
+
+// ItemArtSource finds the cover of a Navidrome album, artist or playlist by id.
+type ItemArtSource interface {
+	ItemArt(ctx context.Context, kind, id string) (*art.Image, error)
+}
+
+// itemArt serves GET /api/art/item?provider=navidrome&kind=album|artist|playlist&id=.
+// The id is checked here before anything is asked of the server; any failure
+// to find a picture is the same quiet 404.
+func (s *serverState) itemArt(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	kind, id := q.Get("kind"), q.Get("id")
+	if q.Get("provider") != "navidrome" || (kind != "album" && kind != "artist" && kind != "playlist") || !art.ValidItemID(id) {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request", "code": "invalid_request"})
+		return
+	}
+	if s.cfg.ItemArt == nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
+		return
+	}
+	img, err := s.cfg.ItemArt.ItemArt(r.Context(), kind, id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "no_art"})
+		return
+	}
+	writeImage(w, r, img)
 }
