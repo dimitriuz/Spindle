@@ -286,9 +286,9 @@ li.played .t1, li.played .t2, li.played .end { color: var(--dim); opacity: .55; 
 /* Desktop: Now Playing on the left; Queue, Browse and Search as tabs on the right. */
 @media (min-width: 900px) {
   :root { --tabs: 0px; }
-  body { display: grid; grid-template-columns: 420px 1fr; grid-template-rows: auto 1fr; height: 100vh; overflow: hidden; }
+  body { display: grid; grid-template-columns: 420px minmax(0, 1fr); grid-template-rows: auto 1fr; height: 100vh; overflow: hidden; }
   #now { display: block; grid-area: 1 / 1 / 3 / 2; max-width: none; margin: 0; width: 100%; padding: 32px 28px; overflow-y: auto; border-right: 1px solid var(--line); }
-  #tabs { position: static; grid-area: 1 / 2; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 0 24px; gap: 8px; }
+  #tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; position: static; grid-area: 1 / 2; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 0 24px; gap: 8px; }
   #tabs a { flex: 0 0 auto; flex-direction: row; min-height: 56px; padding: 0 16px; gap: 8px; font-size: 15px; }
   #tabs [data-tab=now] { display: none; }
   body[data-tab=now] #queue { display: block; }
@@ -384,3 +384,126 @@ html { transition: none; }
 .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
 .swatch { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); padding: 0; position: relative; }
 .swatch[aria-pressed=true] { outline: 2px solid var(--text); outline-offset: 2px; }
+
+/* ===== Theme skins: the shape of controls, bars and panels (colours come from the variables) ===== */
+@font-face { font-family: "Press Start 2P"; src: url(PressStart2P.woff2) format("woff2"); font-display: swap; }
+h1, h2, h3, #tabs a, .btn, .seg button, .seg a, .chip, .tname2 { font-family: var(--font-head, inherit); }
+
+/* ---- minimal: ghost controls, thin lines ---- */
+html[data-skin=minimal] .ic.big { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+html[data-skin=minimal] .btn.primary, html[data-skin=minimal] .seg button.on, html[data-skin=minimal] .seg a.on,
+html[data-skin=minimal] .chip[aria-pressed=true], html[data-skin=minimal] .vtoggle .ic[aria-pressed=true] { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+html[data-skin=minimal] #bar .track { height: 2px; margin-top: -1px; border-radius: 0; }
+html[data-skin=minimal] #knob { width: 12px; height: 12px; margin: -6px 0 0 -6px; background: var(--accent); }
+html[data-skin=minimal] .scard, html[data-skin=minimal] .tile { box-shadow: none; background: transparent; }
+html[data-skin=minimal] #tabs { background: transparent; }
+
+/* ---- hifi: brushed metal, knob and LED glow ---- */
+html[data-skin=hifi] .ic { border-radius: 10px; }
+html[data-skin=hifi] .ic.big { border-radius: 50%; background: radial-gradient(circle at 32% 28%, #5d616a, #1b1d20 72%); color: var(--accent); border: 2px solid #6d727b;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.35), 0 6px 14px rgba(0,0,0,.45), 0 0 0 3px var(--bg), 0 0 0 4px #4a4e55; }
+html[data-skin=hifi] .ic.big svg { filter: drop-shadow(0 0 6px var(--accent)); }
+html[data-skin=hifi] .btn, html[data-skin=hifi] .seg button, html[data-skin=hifi] .seg a, html[data-skin=hifi] .chip, html[data-skin=hifi] .vsel {
+  background: linear-gradient(color-mix(in srgb, var(--panel) 80%, white), var(--panel)); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 1px 2px rgba(0,0,0,.35); }
+html[data-skin=hifi] .btn.primary, html[data-skin=hifi] .seg button.on, html[data-skin=hifi] .seg a.on, html[data-skin=hifi] .chip[aria-pressed=true] {
+  background: var(--accent); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent); }
+html[data-skin=hifi] #bar .track { height: 8px; border-radius: 2px; background: #0b0c0e; box-shadow: inset 0 1px 3px rgba(0,0,0,.8); }
+html[data-skin=hifi] #fill { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, black), var(--accent)); box-shadow: 0 0 8px var(--accent); }
+html[data-skin=hifi] #knob { width: 14px; height: 24px; margin: -12px 0 0 -7px; border-radius: 3px; background: linear-gradient(#e8e9eb, #8d9096); border: 1px solid #25272a; }
+html[data-skin=hifi] .scard { background: linear-gradient(color-mix(in srgb, var(--panel) 85%, white), var(--panel)); }
+
+/* ---- walkman: chunky keys that press down ---- */
+html[data-skin=walkman] .ic { border-radius: 14px; background: color-mix(in srgb, var(--text) 8%, transparent); }
+html[data-skin=walkman] .ic.big { border-radius: 24px; background: var(--accent); color: var(--on-accent);
+  box-shadow: 0 6px 0 color-mix(in srgb, var(--accent) 55%, black), 0 10px 16px rgba(0,0,0,.18); transition: transform .06s, box-shadow .06s; }
+html[data-skin=walkman] .ic.big:active { transform: translateY(5px); box-shadow: 0 1px 0 color-mix(in srgb, var(--accent) 55%, black); opacity: 1; }
+html[data-skin=walkman] .btn, html[data-skin=walkman] .seg button, html[data-skin=walkman] .seg a, html[data-skin=walkman] .chip {
+  border: 2px solid color-mix(in srgb, var(--text) 30%, transparent); border-radius: 14px; box-shadow: 0 3px 0 var(--line); }
+html[data-skin=walkman] .btn.primary, html[data-skin=walkman] .seg button.on, html[data-skin=walkman] .seg a.on, html[data-skin=walkman] .chip[aria-pressed=true] { border-color: color-mix(in srgb, var(--accent) 60%, black); box-shadow: 0 3px 0 color-mix(in srgb, var(--accent) 55%, black); }
+html[data-skin=walkman] #bar .track { height: 12px; border-radius: 6px; background: var(--panel); border: 2px solid color-mix(in srgb, var(--text) 40%, transparent); }
+html[data-skin=walkman] #knob { width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 8px; background: var(--accent); border: 3px solid var(--text); }
+html[data-skin=walkman] .scard, html[data-skin=walkman] .tile { border-width: 2px; box-shadow: 0 4px 0 var(--line); }
+
+/* ---- winamp: bevelled keys, LCD segments ---- */
+html[data-skin=winamp] .ic { border-radius: 2px; border: 1px solid; border-color: color-mix(in srgb, var(--text) 25%, var(--panel)) color-mix(in srgb, black 60%, var(--panel)) color-mix(in srgb, black 60%, var(--panel)) color-mix(in srgb, var(--text) 25%, var(--panel));
+  background: linear-gradient(color-mix(in srgb, var(--panel) 85%, white), var(--panel)); }
+html[data-skin=winamp] .ic:active { border-color: color-mix(in srgb, black 60%, var(--panel)) color-mix(in srgb, var(--text) 25%, var(--panel)) color-mix(in srgb, var(--text) 25%, var(--panel)) color-mix(in srgb, black 60%, var(--panel)); opacity: 1; }
+html[data-skin=winamp] .ic.big { border-radius: 3px; color: var(--accent); border-width: 2px; }
+html[data-skin=winamp] .ic.big svg, html[data-skin=winamp] .ic.on svg { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 70%, transparent)); }
+html[data-skin=winamp] .btn, html[data-skin=winamp] .seg button, html[data-skin=winamp] .seg a, html[data-skin=winamp] .chip { border-radius: 2px; }
+html[data-skin=winamp] h1, html[data-skin=winamp] h2, html[data-skin=winamp] .seek { text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent); }
+html[data-skin=winamp] #bar .track { height: 10px; border-radius: 0; background: color-mix(in srgb, black 70%, var(--bg)); border: 1px solid var(--line); }
+html[data-skin=winamp] #fill { background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 7px); }
+html[data-skin=winamp] #knob { width: 12px; height: 20px; margin: -10px 0 0 -6px; border-radius: 2px; background: linear-gradient(color-mix(in srgb, var(--text) 80%, white), color-mix(in srgb, var(--text) 40%, black)); border: 1px solid #000; }
+html[data-skin=winamp] .scard, html[data-skin=winamp] .tile { border-radius: 3px; }
+
+/* ---- neon: outlines that glow ---- */
+html[data-skin=neon] .ic.big { background: transparent; color: var(--accent); border: 2px solid var(--accent);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 55%, transparent), inset 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent); }
+html[data-skin=neon] .ic.big svg, html[data-skin=neon] .ic.on svg { filter: drop-shadow(0 0 5px var(--accent)); }
+html[data-skin=neon] .btn.primary, html[data-skin=neon] .seg button.on, html[data-skin=neon] .seg a.on, html[data-skin=neon] .chip[aria-pressed=true], html[data-skin=neon] .vtoggle .ic[aria-pressed=true] {
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border: 1.5px solid var(--accent); box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent); }
+html[data-skin=neon] #bar .track { height: 4px; margin-top: -2px; }
+html[data-skin=neon] #fill { box-shadow: 0 0 10px var(--accent); }
+html[data-skin=neon] #knob { background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+html[data-skin=neon] .scard, html[data-skin=neon] .tile, html[data-skin=neon] .theme { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 8%, transparent); }
+
+/* ---- vinyl: brass knob, leather panels, serif headings ---- */
+html[data-skin=vinyl] .ic.big { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--accent) 60%, white), var(--accent) 55%, color-mix(in srgb, var(--accent) 65%, black));
+  color: var(--on-accent); border: 3px solid color-mix(in srgb, var(--accent) 45%, black);
+  box-shadow: 0 0 0 4px var(--bg), 0 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent), 0 10px 20px rgba(0,0,0,.4); }
+html[data-skin=vinyl] .meta h1, html[data-skin=vinyl] .head h2 { font-weight: 600; letter-spacing: .01em; }
+html[data-skin=vinyl] .scard, html[data-skin=vinyl] .tile { background: linear-gradient(color-mix(in srgb, var(--panel) 92%, white), var(--panel)); box-shadow: 0 6px 18px rgba(0,0,0,.25); }
+html[data-skin=vinyl] #bar .track { height: 5px; border: 1px solid var(--line); background: color-mix(in srgb, black 40%, var(--art)); }
+html[data-skin=vinyl] #knob { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
+html[data-skin=vinyl] .btn, html[data-skin=vinyl] .seg button, html[data-skin=vinyl] .seg a, html[data-skin=vinyl] .chip { border-radius: 999px; }
+
+/* ---- pixel (8-bit and 16-bit): hard edges, thick outlines, stepped bars ---- */
+html[data-skin^=pixel] :where(*, *::before, *::after):not(.disc):not(.disc-slide) { border-radius: 0 !important; }
+html[data-skin^=pixel] .ic.big svg { width: 38px; height: 38px; }
+html[data-skin^=pixel] .btn, html[data-skin^=pixel] .seg button, html[data-skin^=pixel] .seg a, html[data-skin^=pixel] .chip, html[data-skin^=pixel] .vsel, html[data-skin^=pixel] .vq,
+html[data-skin^=pixel] .filter, html[data-skin^=pixel] .theme, html[data-skin^=pixel] .radio, html[data-skin^=pixel] .vtoggle { border-width: 3px; border-color: var(--text); box-shadow: 3px 3px 0 #000; }
+html[data-skin^=pixel] .ic.big { border: 4px solid var(--text); box-shadow: 4px 4px 0 #000; }
+html[data-skin^=pixel] .ic:active, html[data-skin^=pixel] .btn:active { transform: translate(2px, 2px); box-shadow: none; opacity: 1; }
+html[data-skin^=pixel] #tabs a { font-size: 8px; line-height: 1.6; letter-spacing: 0; }
+html[data-skin^=pixel] #tabs { border-top: 4px solid var(--text); }
+html[data-skin^=pixel] .head h2 { font-size: 14px; line-height: 1.5; }
+html[data-skin^=pixel] .meta h1 { font-size: 15px; line-height: 1.6; }
+html[data-skin^=pixel] .scard h3 { font-size: 10px; }
+html[data-skin^=pixel] .btn, html[data-skin^=pixel] .seg button, html[data-skin^=pixel] .seg a, html[data-skin^=pixel] .chip { font-size: 10px; }
+html[data-skin^=pixel] #bar .track { height: 16px; margin-top: -8px; background: var(--bg); border: 3px solid var(--text); }
+html[data-skin^=pixel] #fill { background: repeating-linear-gradient(90deg, var(--accent) 0 8px, transparent 8px 10px); }
+html[data-skin^=pixel] #knob { width: 12px; height: 26px; margin: -13px 0 0 -6px; background: var(--text); border: 3px solid #000; }
+html[data-skin^=pixel] .scard, html[data-skin^=pixel] .tile, html[data-skin^=pixel] .mpop, html[data-skin^=pixel] .msheet { border: 3px solid var(--text); box-shadow: 4px 4px 0 #000; }
+html[data-skin^=pixel] .cover2, html[data-skin^=pixel] #art-cover, html[data-skin^=pixel] .acover { border: 3px solid var(--text); }
+html[data-skin^=pixel] .switch { border: 3px solid var(--text); }
+/* 8-bit: heavier outlines and a flat look; 16-bit: bevelled shading */
+html[data-skin=pixel8] .scard, html[data-skin=pixel8] .tile { box-shadow: 4px 4px 0 var(--line); }
+html[data-skin=pixel16] .btn, html[data-skin=pixel16] .seg button, html[data-skin=pixel16] .seg a, html[data-skin=pixel16] .chip, html[data-skin=pixel16] .vsel, html[data-skin=pixel16] .theme {
+  border-width: 2px; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); box-shadow: inset 0 2px 0 rgba(255,255,255,.2), inset 0 -3px 0 rgba(0,0,0,.35), 2px 2px 0 rgba(0,0,0,.5); }
+html[data-skin=pixel16] .ic.big { border: 3px solid color-mix(in srgb, var(--accent) 40%, black); background: linear-gradient(color-mix(in srgb, var(--accent) 75%, white), var(--accent) 55%, color-mix(in srgb, var(--accent) 70%, black));
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.45), inset 0 -4px 0 rgba(0,0,0,.3), 3px 3px 0 rgba(0,0,0,.55); }
+html[data-skin=pixel16] .scard, html[data-skin=pixel16] .tile { border-width: 2px; border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); box-shadow: inset 0 2px 0 rgba(255,255,255,.1), 3px 3px 0 rgba(0,0,0,.45); }
+html[data-skin=pixel16] #bar .track { border-width: 2px; border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+html[data-skin=pixel16] #fill { background: repeating-linear-gradient(90deg, var(--accent) 0 6px, color-mix(in srgb, var(--accent) 60%, black) 6px 8px); }
+
+/* ---- psx: grey bevelled pads and the four symbols ---- */
+html[data-skin=psx] .ic { border-radius: 12px; background: linear-gradient(color-mix(in srgb, var(--panel) 80%, white), var(--panel)); border: 1px solid color-mix(in srgb, var(--text) 18%, var(--panel));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 2px 0 rgba(0,0,0,.4); }
+html[data-skin=psx] .ic.big { border-radius: 16px; color: var(--accent); border: 2px solid color-mix(in srgb, var(--text) 25%, var(--panel));
+  background: linear-gradient(color-mix(in srgb, var(--panel) 75%, white), color-mix(in srgb, var(--panel) 85%, black)); box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 4px 0 rgba(0,0,0,.45); }
+html[data-skin=psx] .ic.big:active, html[data-skin=psx] .ic:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.2); opacity: 1; }
+html[data-skin=psx] .btn, html[data-skin=psx] .seg button, html[data-skin=psx] .seg a, html[data-skin=psx] .chip { border-radius: 10px; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+html[data-skin=psx] #bar .track { height: 8px; border-radius: 4px; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+html[data-skin=psx] #knob { width: 20px; height: 20px; margin: -10px 0 0 -10px; background: var(--panel); border: 3px solid var(--accent); }
+html[data-skin=psx] .head h2::after { content: " \25B3 \25CB \2715 \25A1"; color: var(--dim); font-size: .55em; letter-spacing: .25em; margin-left: .6em; vertical-align: middle; }
+html[data-skin=psx] .scard h3::after { content: " \25B3"; color: var(--accent); }
+
+/* small round buttons keep their plain look in every skin: hearts, row menus, tile overlays, view switch */
+html[data-skin] .ic.heart, html[data-skin] .ic.more { background: none; border: 0; box-shadow: none; }
+html[data-skin] .tact .ic { background: rgba(0,0,0,.55); border: 0; box-shadow: none; color: #fff; }
+html[data-skin] .vtoggle .ic { background: none; border: 0; box-shadow: none; }
+html[data-skin] .vtoggle .ic[aria-pressed=true] { background: var(--accent); color: var(--on-accent); }
+html[data-skin] .fs-close { background: none; border: 0; box-shadow: none; }
+html[data-skin^=pixel] #now.fs .meta h1 { font-size: clamp(16px, 2.2vw, 46px); line-height: 1.45; }
+@media (min-width: 900px) { html[data-skin=psx] #tabs a, html[data-skin=hifi] #tabs a { padding: 0 10px; font-size: 13px; } html[data-skin^=pixel] #tabs a { padding: 0 10px; } }

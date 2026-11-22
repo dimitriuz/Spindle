@@ -332,7 +332,8 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
   await ok('themes: every theme, option and mode is readable', () => {
     const T = require('./themes.js');
     const lum = T.luminance, ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-    assert.equal(T.THEMES.length, 7, 'cliamp plus the six themes');
+    assert.equal(T.THEMES.length, 11, 'cliamp plus ten themes');
+    for (const t of T.THEMES) assert.ok(t.modes.light && t.modes.dark, t.id + ' has a light and a dark mode');
     for (const t of T.THEMES) {
       assert.ok(t.options.length >= 1, t.id + ' has colour options');
       for (const mode of Object.keys(t.modes)) {
@@ -356,11 +357,17 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(T.resolveMode(minimal, 'auto', true), 'dark');
     assert.equal(T.resolveMode(minimal, 'auto', false), 'light');
     assert.equal(T.resolveMode(minimal, 'light', true), 'light');
-    assert.equal(T.resolveMode(hifi, 'light', false), 'dark', 'a dark-only theme ignores the preference');
-    assert.equal(T.resolveMode(T.byId('walkman'), 'dark', true), 'light', 'a light-only theme too');
+    assert.equal(T.resolveMode(hifi, 'light', false), 'light', 'every theme has both modes');
+    assert.equal(T.resolveMode(hifi, '', false), 'dark', 'no choice: the own mode of the theme, dark by default');
+    assert.equal(T.resolveMode(T.byId('walkman'), '', true), 'light', 'Walkman opens in its light cream');
+    assert.equal(T.resolveMode(T.byId('walkman'), 'dark', false), 'dark');
     assert.notEqual(T.themeVars(minimal, 'blue', 'light')['--accent'], T.themeVars(minimal, 'blue', 'dark')['--accent'], 'accents differ by mode');
     assert.equal(T.themeVars(hifi, 'nope', 'dark')['--accent'], '#ffb04a', 'an unknown option uses the first');
+    assert.equal(T.themeVars(T.byId('winamp'), 'amber', 'light')['--text'], '#3a2800', 'an option can restyle its light mode separately');
     assert.equal(T.themeVars(T.byId('winamp'), 'amber', 'dark')['--text'], '#ffd98a', 'an option can change more than the accent');
+    assert.equal(T.themeVars(T.byId('8bit'), 'nes', 'dark').icons, 'pixel');
+    assert.equal(T.themeVars(T.byId('minimal'), 'ink', 'dark').icons, 'line');
+    assert.equal(T.themeVars(T.byId('psx'), 'cross', 'dark').skin, 'psx');
     assert.equal(T.themeVars(T.byId('neon'), 'cyan', 'dark')['--glow'].startsWith('0 0 22px'), true);
     assert.equal(T.themeVars(hifi, 'amber', 'dark')['--glow'], 'none');
     // cover accent: a mostly red picture gives a red-ish accent; grey gives none
@@ -372,6 +379,12 @@ const ok = async (name, fn) => { await fn(); pass++; void name; };
     assert.equal(T.pickAccent(px(0, 0, 0, 64), true), null);
     assert.equal(T.pickAccent(new Uint8ClampedArray(0), true), null);
     assert.ok(T.luminance(T.pickAccent(px(30, 60, 200, 64), true)) > T.luminance(T.pickAccent(px(30, 60, 200, 64), false)), 'lighter on dark themes than on light ones');
+  });
+  await ok('icon packs cover the icons the page uses', () => {
+    const P = require('./icons.js');
+    const need = ['play', 'pause', 'next', 'prev', 'shuffle', 'repeat', 'more', 'note', 'lyrics', 'check', 'gear', 'queue', 'browse', 'search', 'expand', 'collapse', 'add', 'up', 'down', 'trash', 'grid', 'radio', 'person', 'album', 'folder', 'heart', 'heartfill', 'back'];
+    for (const pack of ['line', 'pixel']) for (const n of need) assert.ok(P[pack].paths[n] && /^[MmLlHhVvCcSsQqTtAaZz0-9 .,\-]+$/.test(P[pack].paths[n]), pack + ' lacks a valid ' + n);
+    assert.ok(P.line.stroke && P.pixel.crisp);
   });
   await ok('albumFacts and its line', () => {
     const f = A.albumFacts([{ album: 'EP', artist: 'M', duration_secs: 397, genre: 'Metal', year: 1987 }, { album: 'EP', artist: 'M', duration_secs: 400, year: 1987 }]);

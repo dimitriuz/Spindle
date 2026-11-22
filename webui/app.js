@@ -501,11 +501,24 @@ if (typeof document !== 'undefined') (function () {
     heartfill: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
     back: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
   };
+  // the icon set of the theme (solid, line or pixel); icons a set lacks come from the solid one
+  const PACKS = (typeof window !== 'undefined' && window.CLIAMP_ICONS) || {};
   function svg(name) {
     const NS = 'http://www.w3.org/2000/svg';
     const s = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path');
     s.setAttribute('viewBox', '0 0 24 24');
     s.setAttribute('aria-hidden', 'true');
+    const pack = PACKS[TH ? TH.iconPack() : ''];
+    if (pack && pack.paths[name] !== undefined) {
+      p.setAttribute('d', pack.paths[name]);
+      if (pack.stroke && !(pack.fill && pack.fill[name])) {
+        // inline style: the page's own `svg { fill: currentColor }` would beat plain attributes
+        s.setAttribute('style', 'fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round');
+      }
+      if (pack.crisp) s.setAttribute('shape-rendering', 'crispEdges');
+      s.appendChild(p);
+      return s;
+    }
     p.setAttribute('d', ICONS[name]);
     s.appendChild(p);
     return s;
@@ -1916,9 +1929,14 @@ if (typeof document !== 'undefined') (function () {
     const paint = () => {
       const cur = TH.byId(TH.get(TH.KEYS.theme, 'cliamp'));
       const sysDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
-      const modePref = TH.get(TH.KEYS.mode, 'auto');
+      const modePref = TH.get(TH.KEYS.mode, '');
       const optOf = (t) => TH.get(TH.KEYS.opt(t.id), t.options[0].id);
-      const choose = (fn) => { fn(); TH.apply(); syncCoverAccent(); paint(); };
+      const choose = (fn) => {
+        const before = TH.iconPack();
+        fn(); TH.apply(); syncCoverAccent();
+        if (TH.iconPack() !== before) { location.reload(); return; } // icons are drawn once: the other set needs a fresh page
+        paint();
+      };
       const cards = h('div', { class: 'themes' }, TH.THEMES.map((t) => {
         const v = TH.themeVars(t, optOf(t), TH.resolveMode(t, modePref, sysDark));
         return h('button', { class: 'theme', 'aria-pressed': String(t.id === cur.id), title: t.blurb, onclick: () => choose(() => TH.set(TH.KEYS.theme, t.id)) },
@@ -1930,7 +1948,7 @@ if (typeof document !== 'undefined') (function () {
         h('button', { class: 'swatch', 'aria-pressed': String(o.id === optOf(cur)), title: o.name, 'aria-label': o.name,
           style: 'background:' + TH.accentFor(o, cur.modes[mode].scheme), onclick: () => choose(() => TH.set(TH.KEYS.opt(cur.id), o.id)) })));
       card.replaceChildren(...[h('h3', null, 'Appearance'), cards, setRow('Colour', swatches, cur.options.find((o) => o.id === optOf(cur)).name),
-        TH.hasBoth(cur) ? setRow('Light or dark', chipRow(['auto', 'light', 'dark'], modePref, (v) => choose(() => TH.set(TH.KEYS.mode, v)), (v) => ({ auto: 'Follow system', light: 'Light', dark: 'Dark' }[v]))) : null,
+        setRow('Light or dark', chipRow(['', 'light', 'dark', 'auto'], modePref, (v) => choose(() => TH.set(TH.KEYS.mode, v)), (v) => ({ '': 'Theme default', auto: 'Follow system', light: 'Light', dark: 'Dark' }[v]))),
         setRow('Accent from the cover', switchBtn(TH.get(TH.KEYS.cover, '0') === '1', (v) => { TH.set(TH.KEYS.cover, v ? '1' : '0'); TH.apply(); syncCoverAccent(); }, 'Accent from the album cover'),
           'Tints the controls with a colour from the playing album')].filter(Boolean));
     };
